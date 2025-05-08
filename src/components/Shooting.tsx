@@ -17,10 +17,12 @@ import {
   useChainId,
   useWalletClient,
   usePublicClient,
+  useWriteContract
 } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
 import { config } from "~/components/providers/WagmiProvider";
 import { parseEther } from 'viem/utils';
+import web3gameAbi from '~/contracts/web3game_abi.json';
 
 // 共通
 const GAME_WIDTH = 360;
@@ -236,6 +238,9 @@ const useGameImages = () => {
   return images;
 };
 
+function setFid(fid: number) {
+  return fid;
+}
 
 const ShootingGame: React.FC = () => {
   const {isSDKLoaded, context, added, notificationDetails, lastEvent, addFrame, addFrameResult, openUrl, close } = useFrame();
@@ -243,6 +248,7 @@ const ShootingGame: React.FC = () => {
   const [txHash, setTxHash] = useState<string | null>(null);
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
+  const [fid, setFid] = useState(0);
   
   const {
     sendTransaction,
@@ -266,23 +272,33 @@ const ShootingGame: React.FC = () => {
   } = useSwitchChain();
 
   const [isPaymentConfirmed, setIsPaymentConfirmed] = useState(false);
+  const { data: hash, writeContract } = useWriteContract()
 
   const handleSendEth = useCallback(async () => {
     if (!isConnected) {
       await connect({ connector: connectors[0] });
       return;
     }
-
+  
+    if (!isSDKLoaded || !context?.user?.fid) {
+      console.error('FIDが取得できません');
+      return;
+    }
+  
     await switchChain({ chainId: monadTestnet.id });
-    sendTransaction({
-      to: "0x603121410742328B0AF3B0e4a066B29A9018FB1b", // プロトコルギルドのアドレス
-      value: parseEther("0.1"),
-    }, {
+    console.log("fid_transfer:",context.user.fid);
+    writeContract({
+      address: '0xde694d5381f5ab3ad79351e24e712506934617d0',
+      abi: web3gameAbi,
+      functionName: 'play',
+      args: [BigInt(context.user.fid)],
+      value: parseEther("0.05")
+    },{
       onSuccess: (hash) => {
         setTxHash(hash);
       },
     });
-  }, [isConnected, chainId, connect, connectors, sendTransaction, switchChain]);
+  }, [isConnected, isSDKLoaded, context, chainId, connect, connectors, writeContract, switchChain]);
 
   
 
@@ -307,7 +323,7 @@ const ShootingGame: React.FC = () => {
   useEffect(() => {
     const fetchPlayLimit = async () => {
       if (!isSDKLoaded || !context?.user.fid) return;
-
+      console.log("fid:",context?.user.fid);
       try {
         const response = await fetch(`/api/limitCount?fid=${context.user.fid}`);
         const data = await response.json();
@@ -1144,7 +1160,7 @@ const drawGame = () => {
     ctx.fillStyle = '#ffffff';
     ctx.font = '24px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('MOXIE Shoot \'em ups', GAME_WIDTH / 2, GAME_HEIGHT / 3);
+    ctx.fillText('MONAD Shoot \'em ups', GAME_WIDTH / 2, GAME_HEIGHT / 3);
     return;
   }
 
@@ -1199,7 +1215,7 @@ gameStateRef.current.enemies.forEach(enemy => {
     case 'shooter':
       enemyImage = images.shooter;
       // シューター型の敵は大きめ
-      const shooterSize = 30; // 例: 30x30ピクセル
+      const shooterSize = 42; // 例: 30x30ピクセル
       if (enemyImage) {
         ctx.drawImage(
           enemyImage,
@@ -1213,7 +1229,7 @@ gameStateRef.current.enemies.forEach(enemy => {
     case 'fast':
       enemyImage = images.fast;
       // 高速型の敵は小さめ
-      const fastSize = 24; // 例: 15x15ピクセル
+      const fastSize = 30; // 例: 15x15ピクセル
       if (enemyImage) {
         ctx.drawImage(
           enemyImage,
@@ -1227,7 +1243,7 @@ gameStateRef.current.enemies.forEach(enemy => {
     default:
       enemyImage = images.enemy;
       // 通常の敵は標準サイズ
-      const normalSize = 24; // 例: 20x20ピクセル
+      const normalSize = 30; // 例: 20x20ピクセル
       if (enemyImage) {
         ctx.drawImage(
           enemyImage,
@@ -1253,7 +1269,7 @@ gameStateRef.current.enemies.forEach(enemy => {
     // ボス画像の描画
     const bossImg = images.boss;
     if (bossImg) {
-      const bossSize = 120; // ボスの大きさを設定
+      const bossSize = 150; // ボスの大きさを設定
       ctx.drawImage(
         bossImg,
         boss.x - bossSize/2,
@@ -1459,7 +1475,7 @@ gameStateRef.current.enemies.forEach(enemy => {
             >
               {isSendTxPending ? 'Sending...' : 
                isSwitchChainPending ? 'Switching Chain...' :
-               'Send 0.1 MON to Play +1 Time'}
+               'Send 0.05 MON to Play +1 Time'}
             </button>
             {isSendTxError && (
               <div className="text-red-500 text-sm">
@@ -1546,7 +1562,7 @@ gameStateRef.current.enemies.forEach(enemy => {
           >
             {isSendTxPending ? 'Sending...' : 
              isSwitchChainPending ? 'Switching Chain...' :
-             'Send 0.1 MON to Play +1 Time'}
+             'Send 0.05 MON to Play +1 Time'}
           </button>
           {isSendTxError && (
             <div className="text-red-500 text-sm">
@@ -1689,3 +1705,4 @@ gameStateRef.current.enemies.forEach(enemy => {
 };
 
 export default ShootingGame;
+
