@@ -35,7 +35,7 @@ const BOSS_BONUS_SCORE = 30000;
 
 const ENEMY_SHOOT_LIMIT_Y = GAME_HEIGHT * 0.6; // 画面の60%の位置
 
-const IS_DEBUG = true;
+const IS_DEBUG = false;
 
 // NFTミント用の設定
 const NFT_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NFT_CONTRACT_ADDRESS || '0x9e36adb4ac80d83b65a543c5d662532238b0b23f';
