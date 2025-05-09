@@ -307,7 +307,7 @@ const ShootingGame: React.FC = () => {
     await switchChain({ chainId: monadTestnet.id });
     console.log("fid_transfer:",context.user.fid);
     writeContract({
-      address: '0xde694d5381f5ab3ad79351e24e712506934617d0',
+      address: '0x590dDd056fa14AC70bBc4b3e24dD109321D21688',
       abi: web3gameAbi,
       functionName: 'play',
       args: [BigInt(context.user.fid)],
