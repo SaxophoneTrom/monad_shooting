@@ -38,7 +38,7 @@ const ENEMY_SHOOT_LIMIT_Y = GAME_HEIGHT * 0.6; // 画面の60%の位置
 const IS_DEBUG = true;
 
 // NFTミント用の設定
-const NFT_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NFT_CONTRACT_ADDRESS || '0x59806a765323c308d5d879f118f67379bcad6382';
+const NFT_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NFT_CONTRACT_ADDRESS || '0x9e36adb4ac80d83b65a543c5d662532238b0b23f';
 
 const PLAY_AMOUNT =  process.env.NEXT_PUBLIC_PLAY_AMOUNT || 0.05;
 
@@ -1348,15 +1348,8 @@ gameStateRef.current.enemies.forEach(enemy => {
     return true;
   });
 
-  if (gameState === 'gameover') {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '24px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('Game Over!', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80);
-    ctx.fillText(`Score: ${gameStateRef.current.score}`, GAME_WIDTH / 2, GAME_HEIGHT / 2 - 40);
-  }
+  // ゲームオーバー時の半透明レイヤーとテキスト表示は削除
+  // renderGameOver関数で代替するため
 };
     // マウス用のイベントハンドラを修正
     const handleMouseDown = (e: React.MouseEvent) => {
@@ -1571,149 +1564,193 @@ gameStateRef.current.enemies.forEach(enemy => {
   const renderGameOverButtons = () => {
     if (playLimit !== null && playCount >= playLimit && !playPermission) {
       return (
-        <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
-                    flex flex-col gap-4">
-          <button
-            onClick={handleSendEth}
-            className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
-                     transition-colors duration-200"
-            disabled={isSendTxPending || isSwitchChainPending}
-          >
-            {isSendTxPending ? 'Sending...' : 
-             isSwitchChainPending ? 'Switching Chain...' :
-             'Send ' + PLAY_AMOUNT + ' MON to Play +1 Time'}
-          </button>
-          {isSendTxError && (
-            <div className="text-red-500 text-sm">
-              {sendTxError.message}
+        <div className="absolute inset-0 flex flex-col items-center">
+          {/* スコア表示を上部に移動 */}
+          <div className="mt-1 text-center">
+            <h2 className="text-white text-2xl font-bold mb-1">Game Over</h2>
+{/*             <div className="text-white text-2xl font-bold mb-2">{score.toLocaleString()} pts</div>
+ */}          </div>
+          
+          {/* モーダル風のNFT表示 */}
+          <div className="bg-gray-800 bg-opacity-90 rounded-xl p-1 mx-4 w-full max-w-xs shadow-lg border border-gray-700">
+            <div className="text-center mb-1">
+              <h3 className="text-white text-lg font-bold">⭐Mint Your Achievement NFT⭐</h3>
             </div>
-          )}
-          {isSwitchChainError && (
-            <div className="text-red-500 text-sm">
-              {switchChainError.message}
-            </div>
-          )}
-          {txHash && (
-            <div className="text-sm">
-              <div>Transaction: {txHash.slice(0, 6)}...{txHash.slice(-4)}</div>
-              <div>
-                Status:{" "}
-                {isConfirming
-                  ? "Confirming..."
-                  : isConfirmed
-                  ? "Confirmed!"
-                  : "Pending"}
+            
+            <div className="relative bg-gray-900 rounded-lg p-1 mb-2">
+              <img 
+                src={`/images/nft-preview-${getScoreTier(score)}.png`} 
+                alt="NFT Preview" 
+                className="w-full h-auto object-contain mx-auto"
+              />
+              <div className="absolute top-2 right-2 bg-gray-800 bg-opacity-80 px-2 py-1 rounded-md">
+                <span className="text-xs font-medium text-white uppercase">{getScoreTier(score)}</span>
               </div>
             </div>
-          )}
-
-          {/* NFTミントボタンを追加 */}
-          <button
-            onClick={mintNFT}
-            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg
-                     transition-colors duration-200"
-            disabled={isMintingNFT || isMintConfirming}
-          >
-            {isMintingNFT ? 'Processing...' :
-             isMintConfirming ? 'Checking...' :
-             mintSuccess ? 'NFT minted!' :
-             'Mint NFT with score'}
-          </button>
-          {mintError && (
-            <div className="text-red-500 text-sm">
-              {mintError}
-            </div>
-          )}
-          {mintTxHash && (
-            <div className="text-sm">
-              <div>MintTX: {mintTxHash.slice(0, 6)}...{mintTxHash.slice(-4)}</div>
-            </div>
-          )}
-
-          <button
-            onClick={() => setGameState('ranking')}
-            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
-                     transition-colors duration-200"
-          >
-            Show ranking
-          </button>
-          <button
-            onClick={() => openShare(`I got ${score.toString()} pts!!\nLet's play!`)}
-            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg
-                     transition-colors duration-200"
-          >
-            Share
-          </button>
+            
+            {/* ミントボタン */}
+            <button
+              onClick={mintNFT}
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg
+                      transition-colors duration-200 w-full mb-3"
+              disabled={isMintingNFT || isMintConfirming}
+            >
+              {isMintingNFT ? 'Processing...' :
+               isMintConfirming ? 'Confirming...' :
+               mintSuccess ? 'NFT Minted!' :
+               'Mint NFT(0.1 MON)'}
+            </button>
+            
+            {mintError && (
+              <div className="text-red-400 text-sm mb-3 text-center">
+                {mintError}
+              </div>
+            )}
+            
+            {mintTxHash && (
+              <div className="text-gray-300 text-sm mb-3 text-center">
+                TX: {mintTxHash.slice(0, 6)}...{mintTxHash.slice(-4)}
+              </div>
+            )}
+            
+            {/* プレイ回数制限のため、追加プレイ用の支払いボタン */}
+            <button
+              onClick={handleSendEth}
+              className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
+                       transition-colors duration-200 w-full mb-1"
+              disabled={isSendTxPending || isSwitchChainPending}
+            >
+              {isSendTxPending ? 'Sending...' : 
+               isSwitchChainPending ? 'Switching Chain...' :
+               'Send ' + PLAY_AMOUNT + ' MON to Play +1 Time'}
+            </button>
+            {isSendTxError && (
+              <div className="text-red-500 text-sm text-center mb-2">
+                {sendTxError.message}
+              </div>
+            )}
+            {isSwitchChainError && (
+              <div className="text-red-500 text-sm text-center mb-2">
+                {switchChainError.message}
+              </div>
+            )}
+            {txHash && (
+              <div className="text-sm text-center mb-2">
+                <div>TX: {txHash.slice(0, 6)}...{txHash.slice(-4)}</div>
+                <div>
+                  Status: {isConfirming ? "Confirming..." : isConfirmed ? "Confirmed!" : "Pending"}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* ランキングとシェアボタンを画面下部に配置 */}
+          <div className="flex gap-3 mt-4 w-full max-w-xs px-4">
+            <button
+              onClick={() => setGameState('ranking')}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg
+                       transition-colors duration-200 flex-1"
+            >
+              Rankings
+            </button>
+            <button
+              onClick={() => openShare(`I scored ${score.toLocaleString()} points in MONAD Shooter!`)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg
+                       transition-colors duration-200 flex-1"
+            >
+              Share
+            </button>
+          </div>
         </div>
       );
     }
 
+    // 通常のゲームオーバー画面（プレイ回数制限なし）
     return (
-      <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
-                    flex flex-col gap-4 items-center w-full max-w-xs">
+      <div className="absolute inset-0 flex flex-col items-center">
+        {/* スコア表示を上部に移動 */}
+        <div className="mt-4 text-center">
+          <h2 className="text-white text-2xl font-bold mb-1">Game Over</h2>
+        </div>
         
-        {/* NFT画像の表示 */}
-        <div className="w-full text-center mb-2">
-          <h3 className="text-white text-lg font-bold mb-2">Mint your achievement NFT!</h3>
-          <div className="bg-gray-800 rounded-lg p-3 inline-block">
+        {/* モーダル風のNFT表示 */}
+        <div className="bg-gray-800 bg-opacity-90 rounded-xl p-1 mx-4 w-full max-w-xs shadow-lg border border-gray-700">
+          <div className="text-center mb-3">
+          <h3 className="text-white text-lg font-bold">⭐Mint Your Achievement NFT⭐</h3>
+          </div>
+          
+          <div className="relative bg-gray-900 rounded-lg p-1 mb-2">
             <img 
               src={`/images/nft-preview-${getScoreTier(score)}.png`} 
               alt="NFT Preview" 
-              className="w-48 h-48 object-contain mx-auto"
+              className="w-full h-auto object-contain mx-auto"
             />
+            <div className="absolute top-2 right-2 bg-gray-800 bg-opacity-80 px-2 py-1 rounded-md">
+              <span className="text-xs font-medium text-white uppercase">{getScoreTier(score)}</span>
+            </div>
           </div>
-          <p className="text-gray-300 text-sm mt-2">Score: {score}</p>
+          
+          {/* ミントボタン */}
+          <button
+            onClick={mintNFT}
+            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg
+                    transition-colors duration-200 w-full mb-3"
+            disabled={isMintingNFT || isMintConfirming}
+          >
+            {isMintingNFT ? 'Processing...' :
+             isMintConfirming ? 'Confirming...' :
+             mintSuccess ? 'NFT Minted!' :
+             'Mint NFT(0.1 MON)'}
+          </button>
+          
+          {mintError && (
+            <div className="text-red-400 text-sm mb-3 text-center">
+              {mintError}
+            </div>
+          )}
+          
+          {mintTxHash && (
+            <div className="text-gray-300 text-sm mb-3 text-center">
+              TX: {mintTxHash.slice(0, 6)}...{mintTxHash.slice(-4)}
+            </div>
+          )}
+          
+          {/* リプレイボタン */}
+          <button
+            onClick={handleStartGame}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg
+                     transition-colors duration-200 w-full mb-3"
+          >
+            Play Again
+          </button>
         </div>
-
-        {/* NFTミントボタン */}
-        <button
-          onClick={mintNFT}
-          className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-lg
-                  transition-colors duration-200 w-full"
-          disabled={isMintingNFT || isMintConfirming}
-        >
-          {isMintingNFT ? 'Processing...' :
-           isMintConfirming ? 'Checking...' :
-           mintSuccess ? 'NFT minted!' :
-           'Mint NFT with score'}
-        </button>
-        {mintError && (
-          <div className="text-red-500 text-sm">
-            {mintError}
-          </div>
-        )}
-        {mintTxHash && (
-          <div className="text-sm text-gray-200">
-            <div>NFT MINT TX: {mintTxHash.slice(0, 6)}...{mintTxHash.slice(-4)}</div>
-          </div>
-        )}
-
-        {/* リプレイボタン */}
-        <button
-          onClick={handleStartGame}
-          className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
-                   transition-colors duration-200 w-full"
-        >
-          Replay
-        </button>
-
-        {/* ランキングとシェアボタンを横並びに */}
-        <div className="flex gap-2 w-full">
+        
+        {/* ランキングとシェアボタンを画面下部に配置 */}
+        <div className="flex gap-3 mt-4 w-full max-w-xs px-4">
           <button
             onClick={() => setGameState('ranking')}
-            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg
                      transition-colors duration-200 flex-1"
           >
-            Show ranking
+            Rankings
           </button>
           <button
-            onClick={() => openShare(`I got ${score.toString()} pts!!`)}
-            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg
+            onClick={() => openShare(`I scored ${score.toLocaleString()} points in MONAD Shooter!`)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg
                      transition-colors duration-200 flex-1"
           >
             Share
           </button>
         </div>
+      </div>
+    );
+  };
+
+  // ゲームオーバー表示
+  const renderGameOver = () => {
+    return (
+      <div className="absolute inset-0 bg-black bg-opacity-60">
+        {renderGameOverButtons()}
       </div>
     );
   };
@@ -1845,8 +1882,8 @@ gameStateRef.current.enemies.forEach(enemy => {
 
   // スコアに応じたティアを返す関数
   const getScoreTier = (score: number) => {
-    if (score >= 35000) return 'gold';
-    if (score >= 5000) return 'silver';
+    if (score >= 50000) return 'gold';
+    if (score >= 35000) return 'silver';
     return 'bronze';
   };
 
@@ -1901,7 +1938,7 @@ gameStateRef.current.enemies.forEach(enemy => {
           )}
 
         {gameState === 'start' && renderStartButton()}
-        {gameState === 'gameover' && renderGameOverButtons()}
+        {gameState === 'gameover' && renderGameOver()}
 
       </div>
       <div className="mt-4 text-sm text-gray-600 text-center select-none">
