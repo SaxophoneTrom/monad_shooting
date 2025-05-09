@@ -1,5 +1,5 @@
 import CryptoJS from 'crypto-js';
-
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const signData = (data: any): string => {
   const hmacKey = process.env.NEXT_PUBLIC_HMAC_KEY;
   if (!hmacKey) {

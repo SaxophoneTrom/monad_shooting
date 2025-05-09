@@ -42,7 +42,7 @@ export async function sendNeynarFrameNotification({
     const notification = {
       title,
       body,
-      target_url: APP_URL,
+      target_url: APP_URL ?? "",
     };
 
     const result = await client.publishFrameNotifications({ 

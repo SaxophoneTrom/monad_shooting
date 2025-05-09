@@ -23,7 +23,7 @@ const RankingBoard: React.FC<RankingBoardProps> = ({ rankings = [], onBack }) =>
 
       const url = process.env.APP_URL || "https://moxie-shooting-v2.vercel.app/";
       //const url = "https://moxie-frame-kit.vercel.app/";
-      let inputSentence = sentence + "\n\nFrame by @saxophone55.eth";
+      const inputSentence = sentence + "\n\nFrame by @saxophone55.eth";
       const shareUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(inputSentence)}&embeds%5B%5D=${encodeURIComponent(url)}`
       sdk.actions.openUrl(shareUrl);
   }, []);

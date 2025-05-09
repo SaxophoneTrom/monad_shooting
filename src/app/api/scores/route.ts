@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
       ];
 
         const result = await pool.query(query,values);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Database error:', error);
       }
 

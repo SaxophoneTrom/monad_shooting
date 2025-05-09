@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
 
 
 
-    let playCount = await getPlayCount(fid);
+    const playCount = await getPlayCount(fid);
     let limitCount = LIMIT_CONFIG.daily_limit;
 
 /*     let addLimitCount = await getAddLimitCount(fid);
