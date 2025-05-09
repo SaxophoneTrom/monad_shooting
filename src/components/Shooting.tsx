@@ -23,6 +23,7 @@ import { monadTestnet } from "wagmi/chains";
 import { config } from "~/components/providers/WagmiProvider";
 import { parseEther } from 'viem/utils';
 import web3gameAbi from '~/contracts/web3game_abi.json';
+import awardNFTAbi from '~/contracts/awardNFT_abi.json';
 
 // 共通
 const GAME_WIDTH = 360;
@@ -36,6 +37,10 @@ const ENEMY_SHOOT_LIMIT_Y = GAME_HEIGHT * 0.6; // 画面の60%の位置
 
 const IS_DEBUG = true;
 
+// NFTミント用の設定
+const NFT_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NFT_CONTRACT_ADDRESS || '0x59806a765323c308d5d879f118f67379bcad6382';
+
+const PLAY_AMOUNT =  process.env.NEXT_PUBLIC_PLAY_AMOUNT || 0.05;
 
 // 型定義
 interface Enemy {
@@ -274,6 +279,20 @@ const ShootingGame: React.FC = () => {
   const [isPaymentConfirmed, setIsPaymentConfirmed] = useState(false);
   const { data: hash, writeContract } = useWriteContract()
 
+  // NFTミント関連のステート
+  const [isMintingNFT, setIsMintingNFT] = useState(false);
+  const [mintTxHash, setMintTxHash] = useState<string | null>(null);
+  const [mintSuccess, setMintSuccess] = useState(false);
+  const [mintError, setMintError] = useState<string | null>(null);
+  const [mintSignature, setMintSignature] = useState<{
+    signature: string;
+    parameters: {
+      score: number;
+      nonce: number;
+      expiry: number;
+    };
+  } | null>(null);
+
   const handleSendEth = useCallback(async () => {
     if (!isConnected) {
       await connect({ connector: connectors[0] });
@@ -292,7 +311,7 @@ const ShootingGame: React.FC = () => {
       abi: web3gameAbi,
       functionName: 'play',
       args: [BigInt(context.user.fid)],
-      value: parseEther("0.05")
+      value: parseEther(PLAY_AMOUNT.toString())
     },{
       onSuccess: (hash) => {
         setTxHash(hash);
@@ -1475,7 +1494,7 @@ gameStateRef.current.enemies.forEach(enemy => {
             >
               {isSendTxPending ? 'Sending...' : 
                isSwitchChainPending ? 'Switching Chain...' :
-               'Send 0.05 MON to Play +1 Time'}
+               'Send ' + PLAY_AMOUNT + ' MON to Play +1 Time'}
             </button>
             {isSendTxError && (
               <div className="text-red-500 text-sm">
@@ -1562,7 +1581,7 @@ gameStateRef.current.enemies.forEach(enemy => {
           >
             {isSendTxPending ? 'Sending...' : 
              isSwitchChainPending ? 'Switching Chain...' :
-             'Send 0.05 MON to Play +1 Time'}
+             'Send ' + PLAY_AMOUNT + ' MON to Play +1 Time'}
           </button>
           {isSendTxError && (
             <div className="text-red-500 text-sm">
@@ -1588,6 +1607,29 @@ gameStateRef.current.enemies.forEach(enemy => {
             </div>
           )}
 
+          {/* NFTミントボタンを追加 */}
+          <button
+            onClick={mintNFT}
+            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg
+                     transition-colors duration-200"
+            disabled={isMintingNFT || isMintConfirming}
+          >
+            {isMintingNFT ? 'Processing...' :
+             isMintConfirming ? 'Checking...' :
+             mintSuccess ? 'NFT minted!' :
+             'Mint NFT with score'}
+          </button>
+          {mintError && (
+            <div className="text-red-500 text-sm">
+              {mintError}
+            </div>
+          )}
+          {mintTxHash && (
+            <div className="text-sm">
+              <div>MintTX: {mintTxHash.slice(0, 6)}...{mintTxHash.slice(-4)}</div>
+            </div>
+          )}
+
           <button
             onClick={() => setGameState('ranking')}
             className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
@@ -1608,28 +1650,70 @@ gameStateRef.current.enemies.forEach(enemy => {
 
     return (
       <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
-                    flex flex-col gap-4">
+                    flex flex-col gap-4 items-center w-full max-w-xs">
+        
+        {/* NFT画像の表示 */}
+        <div className="w-full text-center mb-2">
+          <h3 className="text-white text-lg font-bold mb-2">Mint your achievement NFT!</h3>
+          <div className="bg-gray-800 rounded-lg p-3 inline-block">
+            <img 
+              src={`/images/nft-preview-${getScoreTier(score)}.png`} 
+              alt="NFT Preview" 
+              className="w-48 h-48 object-contain mx-auto"
+            />
+          </div>
+          <p className="text-gray-300 text-sm mt-2">Score: {score}</p>
+        </div>
+
+        {/* NFTミントボタン */}
+        <button
+          onClick={mintNFT}
+          className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-lg
+                  transition-colors duration-200 w-full"
+          disabled={isMintingNFT || isMintConfirming}
+        >
+          {isMintingNFT ? 'Processing...' :
+           isMintConfirming ? 'Checking...' :
+           mintSuccess ? 'NFT minted!' :
+           'Mint NFT with score'}
+        </button>
+        {mintError && (
+          <div className="text-red-500 text-sm">
+            {mintError}
+          </div>
+        )}
+        {mintTxHash && (
+          <div className="text-sm text-gray-200">
+            <div>NFT MINT TX: {mintTxHash.slice(0, 6)}...{mintTxHash.slice(-4)}</div>
+          </div>
+        )}
+
+        {/* リプレイボタン */}
         <button
           onClick={handleStartGame}
           className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
-                   transition-colors duration-200"
+                   transition-colors duration-200 w-full"
         >
           Replay
         </button>
-        <button
-          onClick={() => setGameState('ranking')}
-          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
-                   transition-colors duration-200"
-        >
-          Show ranking
-        </button>
-        <button
+
+        {/* ランキングとシェアボタンを横並びに */}
+        <div className="flex gap-2 w-full">
+          <button
+            onClick={() => setGameState('ranking')}
+            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
+                     transition-colors duration-200 flex-1"
+          >
+            Show ranking
+          </button>
+          <button
             onClick={() => openShare(`I got ${score.toString()} pts!!`)}
             className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg
-                     transition-colors duration-200"
+                     transition-colors duration-200 flex-1"
           >
             Share
           </button>
+        </div>
       </div>
     );
   };
@@ -1642,6 +1726,129 @@ gameStateRef.current.enemies.forEach(enemy => {
       setTxHash(null);
     }
   }, [isConfirmed, txHash]);
+
+  // NFTミント用の署名を取得する関数
+  const getMintSignature = async () => {
+    if (!isConnected || !address) {
+      console.error('Wallet not connected');
+      return;
+    }
+
+    try {
+      setIsMintingNFT(true);
+      setMintError(null);
+
+      const response = await fetch('/api/mint-signature', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          playerAddress: address,
+          score: gameStateRef.current.score,
+          fid: context?.user.fid || 0
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get signature');
+      }
+
+      const data = await response.json();
+      setMintSignature(data);
+      return data;
+    } catch (error) {
+      console.error('Signature error:', error);
+      setMintError(error instanceof Error ? error.message : 'Failed to get signature');
+      return null;
+    }
+  };
+
+  // NFTをミントする関数
+  const mintNFT = async () => {
+    if (!isConnected || !address) {
+      await connect({ connector: connectors[0] });
+      return;
+    }
+
+    try {
+      setIsMintingNFT(true);
+      setMintError(null);
+
+      // 署名がない場合は取得
+      let sig = mintSignature;
+      if (!sig) {
+        sig = await getMintSignature();
+        if (!sig) return;
+      }
+
+      await switchChain({ chainId: monadTestnet.id });
+      console.log('NFT_CONTRACT_ADDRESS:', NFT_CONTRACT_ADDRESS);
+      console.log('sig:', sig);
+      // コントラクト呼び出しでNFTをミント
+      writeContract({
+        address: NFT_CONTRACT_ADDRESS as `0x${string}`,
+        abi: awardNFTAbi,
+        functionName: 'mintWithSig',
+        args: [
+          BigInt(sig.parameters.score),
+          BigInt(sig.parameters.nonce),
+          BigInt(sig.parameters.expiry),
+          sig.signature as `0x${string}`
+        ],
+        value: parseEther("0.1") // ミント料金（コントラクトの設定に合わせて調整）
+      }, {
+        onSuccess: (hash) => {
+          setMintTxHash(hash);
+        },
+      });
+    } catch (error) {
+      console.error('NFT minting error:', error);
+      setMintError(error instanceof Error ? error.message : 'Failed to mint NFT');
+    } finally {
+      setIsMintingNFT(false);
+    }
+  };
+
+  // ミントのトランザクション確認を監視
+  const { isLoading: isMintConfirming, isSuccess: isMintConfirmed } =
+    useWaitForTransactionReceipt({
+      hash: mintTxHash as `0x${string}`,
+    });
+
+  // ミント成功時の処理
+  useEffect(() => {
+    if (isMintConfirmed && mintTxHash) {
+      console.log('Mint confirmed:', mintTxHash);
+      setMintSuccess(true);
+      // リセットは少し遅らせる
+      setTimeout(() => {
+        setMintTxHash(null);
+        setMintSignature(null);
+      }, 5000);
+    }
+  }, [isMintConfirmed, mintTxHash]);
+
+  // ゲームオーバー時にNFTミント状態をリセット
+  useEffect(() => {
+    if (gameState === 'gameover') {
+      setMintSuccess(false);
+      setMintError(null);
+      setMintTxHash(null);
+      setMintSignature(null);
+      if(!IS_DEBUG){
+        submitScore();
+      }
+    }
+  }, [gameState]);
+
+  // スコアに応じたティアを返す関数
+  const getScoreTier = (score: number) => {
+    if (score >= 35000) return 'gold';
+    if (score >= 5000) return 'silver';
+    return 'bronze';
+  };
 
   return (
     <div 
