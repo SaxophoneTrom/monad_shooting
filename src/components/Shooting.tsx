@@ -1472,55 +1472,67 @@ gameStateRef.current.enemies.forEach(enemy => {
         <div className="text-white text-center mb-2">
           Play limit reached
         </div>
-        {isConnected && (
-          <div className="text-white text-center mb-2">
-            Current Network: {chainId === monadTestnet.id ? 'Monad Testnet' : 'Unknown Network'}
-          </div>
-        )}
-        {!isPaymentConfirmed ? (
-          <>
-            <button
-              onClick={handleSendEth}
-              className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
-                       transition-colors duration-200"
-              disabled={isSendTxPending || isSwitchChainPending}
-            >
-              {isSendTxPending ? 'Sending...' : 
-               isSwitchChainPending ? 'Switching Chain...' :
-               'Send ' + PLAY_AMOUNT + ' MON to Play +1 Time'}
-            </button>
-            {isSendTxError && (
-              <div className="text-red-500 text-sm">
-                {sendTxError.message}
-              </div>
-            )}
-            {isSwitchChainError && (
-              <div className="text-red-500 text-sm">
-                {switchChainError.message}
-              </div>
-            )}
-            {txHash && (
-              <div className="text-sm">
-                <div>Transaction: {txHash.slice(0, 6)}...{txHash.slice(-4)}</div>
-                <div>
-                  Status:{" "}
-                  {isConfirming
-                    ? "Confirming..."
-                    : isConfirmed
-                    ? "Confirmed!"
-                    : "Pending"}
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
+        {!isConnected ? (
           <button
-            onClick={handleStartGame}
+            onClick={() => connect({ connector: connectors[0] })}
             className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
                      transition-colors duration-200"
           >
-            Start Game
+            Connect Wallet
           </button>
+        ) : (
+          <>
+            {isConnected && (
+              <div className="text-white text-center mb-2">
+                Current Network: {chainId === monadTestnet.id ? 'Monad Testnet' : 'Unknown Network'}
+              </div>
+            )}
+            {!isPaymentConfirmed ? (
+              <>
+                <button
+                  onClick={handleSendEth}
+                  className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
+                           transition-colors duration-200"
+                  disabled={isSendTxPending || isSwitchChainPending}
+                >
+                  {isSendTxPending ? 'Sending...' :
+                   isSwitchChainPending ? 'Switching Chain...' :
+                   'Send ' + PLAY_AMOUNT + ' MON to Play +1 Time'}
+                </button>
+                {isSendTxError && (
+                  <div className="text-red-500 text-sm">
+                    {sendTxError.message}
+                  </div>
+                )}
+                {isSwitchChainError && (
+                  <div className="text-red-500 text-sm">
+                    {switchChainError.message}
+                  </div>
+                )}
+                {txHash && (
+                  <div className="text-sm">
+                    <div>Transaction: {txHash.slice(0, 6)}...{txHash.slice(-4)}</div>
+                    <div>
+                      Status:{" "}
+                      {isConfirming
+                        ? "Confirming..."
+                        : isConfirmed
+                        ? "Confirmed!"
+                        : "Pending"}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <button
+                onClick={handleStartGame}
+                className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
+                         transition-colors duration-200"
+              >
+                Start Game
+              </button>
+            )}
+          </>
         )}
         <button
           onClick={() => setGameState('ranking')}
@@ -1614,16 +1626,26 @@ gameStateRef.current.enemies.forEach(enemy => {
             )}
             
             {/* プレイ回数制限のため、追加プレイ用の支払いボタン */}
-            <button
-              onClick={handleSendEth}
-              className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
-                       transition-colors duration-200 w-full mb-1"
-              disabled={isSendTxPending || isSwitchChainPending}
-            >
-              {isSendTxPending ? 'Sending...' : 
-               isSwitchChainPending ? 'Switching Chain...' :
-               'Send ' + PLAY_AMOUNT + ' MON to Play +1 Time'}
-            </button>
+            {!isConnected ? (
+              <button
+                onClick={() => connect({ connector: connectors[0] })}
+                className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
+                         transition-colors duration-200 w-full mb-1"
+              >
+                Connect Wallet
+              </button>
+            ) : (
+              <button
+                onClick={handleSendEth}
+                className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
+                         transition-colors duration-200 w-full mb-1"
+                disabled={isSendTxPending || isSwitchChainPending}
+              >
+                {isSendTxPending ? 'Sending...' : 
+                 isSwitchChainPending ? 'Switching Chain...' :
+                 'Send ' + PLAY_AMOUNT + ' MON to Play +1 Time'}
+              </button>
+            )}
             {isSendTxError && (
               <div className="text-red-500 text-sm text-center mb-2">
                 {sendTxError.message}
@@ -1634,7 +1656,7 @@ gameStateRef.current.enemies.forEach(enemy => {
                 {switchChainError.message}
               </div>
             )}
-            {txHash && (
+            {txHash && (  
               <div className="text-sm text-center mb-2">
                 <div>TX: {txHash.slice(0, 6)}...{txHash.slice(-4)}</div>
                 <div>
@@ -1874,9 +1896,9 @@ gameStateRef.current.enemies.forEach(enemy => {
       setMintError(null);
       setMintTxHash(null);
       setMintSignature(null);
-      if(!IS_DEBUG){
-        submitScore();
-      }
+      // if(!IS_DEBUG){
+      //   submitScore(); <--- この行を削除
+      // }
     }
   }, [gameState]);
 
