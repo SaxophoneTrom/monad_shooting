@@ -292,30 +292,73 @@ const ShootingGame: React.FC = () => {
       expiry: number;
     };
   } | null>(null);
+  const [isInitiatingPayment, setIsInitiatingPayment] = useState(false); // 新しいステート
+
+  const doConnect = async () => { // connect関数をラップする新しい非同期関数
+    const userAgent = navigator.userAgent;
+    console.log("userAgent:",userAgent);
+    const isWarpcast = userAgent.includes("Warpcast"); // Warpcast環境か判定
+  
+    if (isWarpcast) {
+      await connect({ connector: connectors[0] }); // Farcaster Frame コネクタ
+    } else {
+      // 通常のブラウザ環境の場合、MetaMaskコネクタ (connectors[2]) を試みる
+      // もしMetaMaskがなければ、Coinbase Wallet (connectors[1])を試すなども考慮可能
+      if (connectors.length > 2 && connectors[2]) { // MetaMaskコネクタが存在するか確認
+          await connect({ connector: connectors[2] });
+      } else if (connectors.length > 1 && connectors[1]) { // Coinbase Walletコネクタが存在するか確認
+          await connect({ connector: connectors[1] });
+      } else if (connectors.length > 0 && connectors[0] && !isWarpcast) { // フォールバックとして最初のコネクタを試す (Farcaster Frame以外)
+        // このケースはWarpcastではないが、他の Mini App 互換環境の可能性も考慮
+        await connect({ connector: connectors[0] });
+      }
+      else {
+          console.error("適切なブラウザウォレットコネクタが見つかりません。");
+      }
+    }
+  };
 
   const handleSendEth = useCallback(async () => {
+    setIsInitiatingPayment(true); // ★支払い処理開始
+    let fid = 0;
     if (!isConnected) {
-      await connect({ connector: connectors[0] });
+      await doConnect();
+      setIsInitiatingPayment(false); // ★早期リターン時は解除
       return;
     }
-  
+
     if (!isSDKLoaded || !context?.user?.fid) {
       console.error('FIDが取得できません');
+      // setIsInitiatingPayment(false); // ★FIDがない場合も考慮 (コメントアウトのままなら不要)
+      // return; // FIDがなくてもデフォルト値で進むように変更
+    } else {
+      fid = context.user.fid;
+    }
+
+    try {
+      await switchChain({ chainId: monadTestnet.id });
+    } catch (error) {
+      console.error('Chain switch failed:', error);
+      setIsInitiatingPayment(false); // ★チェーン切り替え失敗時
       return;
     }
-  
-    await switchChain({ chainId: monadTestnet.id });
-    console.log("fid_transfer:",context.user.fid);
+    
+    console.log("fid_transfer:",fid);
     writeContract({
       address: '0x590dDd056fa14AC70bBc4b3e24dD109321D21688',
       abi: web3gameAbi,
       functionName: 'play',
-      args: [BigInt(context.user.fid)],
+      args: [BigInt(fid)],
       value: parseEther(PLAY_AMOUNT.toString())
     },{
       onSuccess: (hash) => {
         setTxHash(hash);
+        setIsInitiatingPayment(false); // ★成功時
       },
+      onError: (error) => {
+        console.error('Transaction failed:', error);
+        setIsInitiatingPayment(false); // ★エラー時
+      }
     });
   }, [isConnected, isSDKLoaded, context, chainId, connect, connectors, writeContract, switchChain]);
 
@@ -341,18 +384,23 @@ const ShootingGame: React.FC = () => {
   // SDKロード完了後にプレイ制限を取得
   useEffect(() => {
     const fetchPlayLimit = async () => {
-      if (!isSDKLoaded || !context?.user.fid) return;
-      console.log("fid:",context?.user.fid);
-      try {
-        const response = await fetch(`/api/limitCount?fid=${context.user.fid}`);
-        const data = await response.json();
-        if (data.success) {
-          setPlayLimit(data.limit);
-          setPlayCount(data.currentCount || 0);
-        }
-      } catch (error) {
-        console.error('Failed to fetch play limit:', error);
-      } finally {
+      if (!(!isSDKLoaded || !context?.user.fid)){
+        try {
+          const response = await fetch(`/api/limitCount?fid=${context.user.fid}`);
+          const data = await response.json();
+          if (data.success) {
+            setPlayLimit(data.limit);
+            setPlayCount(data.currentCount || 0);
+          }
+        } catch (error) {
+          console.error('Failed to fetch play limit:', error);
+        } finally {
+          setIsLoading(false);
+        }  
+      }else{
+        console.log("NoFarcaster");
+        setPlayLimit(0);
+        setPlayCount(0);
         setIsLoading(false);
       }
     };
@@ -1474,7 +1522,7 @@ gameStateRef.current.enemies.forEach(enemy => {
         </div>
         {!isConnected ? (
           <button
-            onClick={() => connect({ connector: connectors[0] })}
+            onClick={doConnect}
             className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
                      transition-colors duration-200"
           >
@@ -1493,11 +1541,12 @@ gameStateRef.current.enemies.forEach(enemy => {
                   onClick={handleSendEth}
                   className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
                            transition-colors duration-200"
-                  disabled={isSendTxPending || isSwitchChainPending}
+                  disabled={isInitiatingPayment || isSendTxPending || isSwitchChainPending}
                 >
-                  {isSendTxPending ? 'Sending...' :
+                  {isInitiatingPayment ? 'Processing...' :
+                   isSendTxPending ? 'Sending...' :
                    isSwitchChainPending ? 'Switching Chain...' :
-                   'Send ' + PLAY_AMOUNT + ' MON to Play +1 Time'}
+                   `Pay ${PLAY_AMOUNT} MON for +1 Play`}
                 </button>
                 {isSendTxError && (
                   <div className="text-red-500 text-sm">
@@ -1539,7 +1588,7 @@ gameStateRef.current.enemies.forEach(enemy => {
           className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
                     transition-colors duration-200"
         >
-          Show ranking
+          Rankings
         </button>
       </div>
       );
@@ -1556,7 +1605,7 @@ gameStateRef.current.enemies.forEach(enemy => {
           Start Game
           {playLimit && (
             <div className="text-sm">
-              Remaining {playLimit - playCount} times
+              {playLimit - playCount} Plays Remaining
             </div>
           )}
         </button>
@@ -1566,7 +1615,7 @@ gameStateRef.current.enemies.forEach(enemy => {
           className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
                    transition-colors duration-200"
         >
-          Show ranking
+          Rankings
         </button>
       </div>
     );
@@ -1639,11 +1688,12 @@ gameStateRef.current.enemies.forEach(enemy => {
                 onClick={handleSendEth}
                 className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
                          transition-colors duration-200 w-full mb-1"
-                disabled={isSendTxPending || isSwitchChainPending}
+                disabled={isInitiatingPayment || isSendTxPending || isSwitchChainPending}
               >
-                {isSendTxPending ? 'Sending...' : 
+                {isInitiatingPayment ? 'Processing...' :
+                 isSendTxPending ? 'Sending...' : 
                  isSwitchChainPending ? 'Switching Chain...' :
-                 'Send ' + PLAY_AMOUNT + ' MON to Play +1 Time'}
+                 `Pay ${PLAY_AMOUNT} MON for +1 Play`}
               </button>
             )}
             {isSendTxError && (
@@ -1790,7 +1840,14 @@ gameStateRef.current.enemies.forEach(enemy => {
   const getMintSignature = async () => {
     if (!isConnected || !address) {
       console.error('Wallet not connected');
-      return;
+      // ウォレットが接続されていない場合、接続を試みる
+      await doConnect();
+      // doConnect内でエラーが発生した場合やユーザーが接続をキャンセルした場合を考慮し、
+      // 再度 isConnected と address をチェックするか、doConnect の結果をハンドリングする必要があるかもしれません。
+      // ここではシンプルに return します。接続成功後に再度この関数が呼ばれることを期待します。
+      if (!isConnected || !address) { // 再度チェック
+        return null; // 接続されなければnullを返す
+      }
     }
 
     try {
@@ -1827,7 +1884,7 @@ gameStateRef.current.enemies.forEach(enemy => {
   // NFTをミントする関数
   const mintNFT = async () => {
     if (!isConnected || !address) {
-      await connect({ connector: connectors[0] });
+      await doConnect();
       return;
     }
 
