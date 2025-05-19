@@ -87,8 +87,8 @@ const RankingBoard: React.FC<RankingBoardProps> = ({ rankings = [], onBack }) =>
             <div className="text-xs">
               {new Date(rank.created_at).toLocaleDateString()}
             </div>
-            <button className="mt-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-             onClick={() => openFrameIntro("@" + rank.user_name + " get " + rank.score + "pts!")}>Share</button>
+            {/*<button className="mt-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+             onClick={() => openFrameIntro("@" + rank.user_name + " get " + rank.score + "pts!")}>Share</button>*/}
           </div>
         ))}
       </div>
