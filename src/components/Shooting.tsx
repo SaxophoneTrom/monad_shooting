@@ -19,6 +19,7 @@ import {
   usePublicClient,
   useWriteContract
 } from "wagmi";
+import { getAccount } from 'wagmi/actions'; // ★ getAccount をインポート
 import { monadTestnet } from "wagmi/chains";
 import { config } from "~/components/providers/WagmiProvider";
 import { parseEther } from 'viem/utils';
@@ -277,7 +278,7 @@ const ShootingGame: React.FC = () => {
   } = useSwitchChain();
 
   const [isPaymentConfirmed, setIsPaymentConfirmed] = useState(false);
-  const { data: hash, writeContract } = useWriteContract()
+  const { data: hash, writeContractAsync } = useWriteContract() // ★ writeContract を writeContractAsync に変更
 
   // NFTミント関連のステート
   const [isMintingNFT, setIsMintingNFT] = useState(false);
@@ -293,6 +294,7 @@ const ShootingGame: React.FC = () => {
     };
   } | null>(null);
   const [isInitiatingPayment, setIsInitiatingPayment] = useState(false); // 新しいステート
+  const [paymentError, setPaymentError] = useState<string | null>(null); // ★ エラーメッセージ用state
 
   const doConnect = async () => { // connect関数をラップする新しい非同期関数
     const userAgent = navigator.userAgent;
@@ -320,49 +322,71 @@ const ShootingGame: React.FC = () => {
 
   const handleSendEth = useCallback(async () => {
     setIsInitiatingPayment(true); // ★支払い処理開始
+    setPaymentError(null); // ★ エラーメッセージをクリア
     let fid = 0;
     if (!isConnected) {
       await doConnect();
-      setIsInitiatingPayment(false); // ★早期リターン時は解除
-      return;
+      // 接続後、再度状態を確認する必要があるかもしれないが、一旦このまま
+      if (!getAccount(config).isConnected) { // 再度接続状態を確認
+        setIsInitiatingPayment(false);
+        setPaymentError("Wallet connection failed.");
+        return;
+      }
+    }
+
+    const currentChainId = getAccount(config).chainId;
+    if (currentChainId !== monadTestnet.id) {
+      try {
+        await switchChain({ chainId: monadTestnet.id });
+        // switchChain成功後、再度チェーンIDを確認
+        if (getAccount(config).chainId !== monadTestnet.id) {
+          setPaymentError('Failed to switch to Monad Testnet. Please switch manually.');
+          setIsInitiatingPayment(false);
+          return;
+        }
+      } catch (error) {
+        console.error('Chain switch failed:', error);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const errMsg = (error && typeof (error as any).shortMessage === 'string' ? (error as any).shortMessage : null) || (error instanceof Error ? error.message : String(error)) || "Failed to switch network.";
+        setPaymentError(`Network switch error: ${errMsg}`);
+        setIsInitiatingPayment(false);
+        return;
+      }
     }
 
     if (!isSDKLoaded || !context?.user?.fid) {
-      console.error('FIDが取得できません');
-      // setIsInitiatingPayment(false); // ★FIDがない場合も考慮 (コメントアウトのままなら不要)
-      // return; // FIDがなくてもデフォルト値で進むように変更
+      console.warn('FID is not available, using default 0.');
+      // FIDがなくてもデフォルト値で進むため、ここではエラーとしない
     } else {
       fid = context.user.fid;
     }
-
-    try {
-      await switchChain({ chainId: monadTestnet.id });
-    } catch (error) {
-      console.error('Chain switch failed:', error);
-      setIsInitiatingPayment(false); // ★チェーン切り替え失敗時
-      return;
-    }
     
-    console.log("fid_transfer:",fid);
-    writeContract({
-      address: '0x590dDd056fa14AC70bBc4b3e24dD109321D21688',
-      abi: web3gameAbi,
-      functionName: 'play',
-      args: [BigInt(fid)],
-      value: parseEther(PLAY_AMOUNT.toString())
-    },{
-      onSuccess: (hash) => {
-        setTxHash(hash);
-        setIsInitiatingPayment(false); // ★成功時
-      },
-      onError: (error) => {
-        console.error('Transaction failed:', error);
-        setIsInitiatingPayment(false); // ★エラー時
-      }
-    });
-  }, [isConnected, isSDKLoaded, context, chainId, connect, connectors, writeContract, switchChain]);
+    try{
+      const paymentTxHash = await writeContractAsync({
+        address: '0x590dDd056fa14AC70bBc4b3e24dD109321D21688',
+        abi: web3gameAbi,
+        functionName: 'play',
+        args: [BigInt(fid)],
+        value: parseEther(PLAY_AMOUNT.toString())
+      });
+      setTxHash(paymentTxHash); // ★ トランザクションハッシュを設定
+      // setIsPaymentConfirmed(true); // これは waitForTransactionReceipt の責務
+      // setIsInitiatingPayment(false); // ★ 成功時 (ここではなく waitForTransactionReceipt で解除する方がよい場合もある)
+    } catch (e: unknown) {
+      const error = e as Error;
+      console.error('Error requesting play transaction:', error);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let friendlyMessage = (error && typeof (error as any).shortMessage === 'string' ? (error as any).shortMessage : null) || (error.message ? error.message : String(error)) || "An unknown error occurred.";
+      if (error.message?.includes("Value sent for a play within an active session")) friendlyMessage = "Error: Payment sent when plays are remaining in session.";
+      else if (error.message?.includes("Value sent for a free play session")) friendlyMessage = "Error: Payment sent for a free session.";
+      else if (error.message?.includes("Incorrect play price for new session")) friendlyMessage = "Error: Incorrect payment amount for a new session.";
+      else if (error.message?.includes("insufficient funds")) friendlyMessage = "Error: Insufficient funds for transaction.";
+      setPaymentError(friendlyMessage);
+    } finally {
+      setIsInitiatingPayment(false); // ★ 処理が成功しても失敗しても最後に解除
+    }
+  }, [isConnected, isSDKLoaded, context, switchChain, connect, connectors, writeContractAsync]);
 
-  
 
   const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover' | 'ranking'>('start');
 
@@ -1548,6 +1572,11 @@ gameStateRef.current.enemies.forEach(enemy => {
                    isSwitchChainPending ? 'Switching Chain...' :
                    `Pay ${PLAY_AMOUNT} MON for +1 Play`}
                 </button>
+                {paymentError && ( // ★ エラーメッセージ表示
+                  <div className="text-red-500 text-sm mt-1">
+                    {paymentError}
+                  </div>
+                )}
                 {isSendTxError && (
                   <div className="text-red-500 text-sm">
                     {sendTxError.message}
@@ -1695,6 +1724,11 @@ gameStateRef.current.enemies.forEach(enemy => {
                  isSwitchChainPending ? 'Switching Chain...' :
                  `Pay ${PLAY_AMOUNT} MON for +1 Play`}
               </button>
+            )}
+            {paymentError && ( // ★ エラーメッセージ表示
+              <div className="text-red-400 text-sm mt-1 text-center">
+                {paymentError}
+              </div>
             )}
             {isSendTxError && (
               <div className="text-red-500 text-sm text-center mb-2">
@@ -1903,7 +1937,7 @@ gameStateRef.current.enemies.forEach(enemy => {
       console.log('NFT_CONTRACT_ADDRESS:', NFT_CONTRACT_ADDRESS);
       console.log('sig:', sig);
       // コントラクト呼び出しでNFTをミント
-      writeContract({
+      writeContractAsync({
         address: NFT_CONTRACT_ADDRESS as `0x${string}`,
         abi: awardNFTAbi,
         functionName: 'mintWithSig',
