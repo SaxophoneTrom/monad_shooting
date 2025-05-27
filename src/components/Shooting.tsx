@@ -268,7 +268,7 @@ const ShootingGame: React.FC = () => {
       hash: txHash as `0x${string}`,
     });
 
-  const { connect, connectors } = useConnect();
+  const { connect, connectors, isPending: isConnectPending } = useConnect();
 
   const {
     switchChain,
@@ -295,42 +295,41 @@ const ShootingGame: React.FC = () => {
   } | null>(null);
   const [isInitiatingPayment, setIsInitiatingPayment] = useState(false); // 新しいステート
   const [paymentError, setPaymentError] = useState<string | null>(null); // ★ エラーメッセージ用state
+  const [isConnectingAndSwitching, setIsConnectingAndSwitching] = useState(false); // 新しいstate: 接続・スイッチ処理中フラグ
 
-  const doConnect = async () => { // connect関数をラップする新しい非同期関数
-    const userAgent = navigator.userAgent;
-    console.log("userAgent:",userAgent);
-    const isWarpcast = userAgent.includes("Warpcast"); // Warpcast環境か判定
-  
-    if (isWarpcast) {
-      await connect({ connector: connectors[0] }); // Farcaster Frame コネクタ
-    } else {
-      // 通常のブラウザ環境の場合、MetaMaskコネクタ (connectors[2]) を試みる
-      // もしMetaMaskがなければ、Coinbase Wallet (connectors[1])を試すなども考慮可能
-      if (connectors.length > 2 && connectors[2]) { // MetaMaskコネクタが存在するか確認
-          await connect({ connector: connectors[2] });
-      } else if (connectors.length > 1 && connectors[1]) { // Coinbase Walletコネクタが存在するか確認
-          await connect({ connector: connectors[1] });
-      } else if (connectors.length > 0 && connectors[0] && !isWarpcast) { // フォールバックとして最初のコネクタを試す (Farcaster Frame以外)
-        // このケースはWarpcastではないが、他の Mini App 互換環境の可能性も考慮
-        await connect({ connector: connectors[0] });
-      }
-      else {
-          console.error("適切なブラウザウォレットコネクタが見つかりません。");
-      }
-    }
-  };
+  const handleConnectAndSwitchChain = useCallback(async () => {
+    setIsConnectingAndSwitching(true);
+    setPaymentError(null);
+    let connectedSuccessfully = isConnected;
 
-  const handleSendEth = useCallback(async () => {
-    setIsInitiatingPayment(true); // ★支払い処理開始
-    setPaymentError(null); // ★ エラーメッセージをクリア
-    let fid = 0;
-    if (!isConnected) {
-      await doConnect();
-      // 接続後、再度状態を確認する必要があるかもしれないが、一旦このまま
-      if (!getAccount(config).isConnected) { // 再度接続状態を確認
-        setIsInitiatingPayment(false);
-        setPaymentError("Wallet connection failed.");
-        return;
+    if (!connectedSuccessfully) {
+      const userAgent = navigator.userAgent;
+      const isWarpcast = userAgent.includes("Warpcast");
+      try {
+        if (isWarpcast) {
+          await connect({ connector: connectors[0] });
+        } else {
+          if (connectors.length > 2 && connectors[2]) { // MetaMask
+            await connect({ connector: connectors[2] });
+          } else if (connectors.length > 1 && connectors[1]) { // Coinbase Wallet
+            await connect({ connector: connectors[1] });
+          } else if (connectors.length > 0 && connectors[0]) { // Fallback
+            await connect({ connector: connectors[0] });
+          } else {
+            throw new Error("No suitable wallet connector found.");
+          }
+        }
+        connectedSuccessfully = getAccount(config).isConnected;
+        if (!connectedSuccessfully) {
+          setPaymentError("Wallet connection failed. Please try again.");
+          setIsConnectingAndSwitching(false);
+          return false;
+        }
+      } catch (error) {
+        console.error("Wallet connection error:", error);
+        setPaymentError(error instanceof Error ? error.message : "Failed to connect wallet.");
+        setIsConnectingAndSwitching(false);
+        return false;
       }
     }
 
@@ -338,30 +337,46 @@ const ShootingGame: React.FC = () => {
     if (currentChainId !== monadTestnet.id) {
       try {
         await switchChain({ chainId: monadTestnet.id });
-        // switchChain成功後、再度チェーンIDを確認
+        // 少し待機してから再度チェーンIDを確認
+        await new Promise(resolve => setTimeout(resolve, 2500)); // 2.5秒待機
+
         if (getAccount(config).chainId !== monadTestnet.id) {
-          await switchChain({ chainId: monadTestnet.id });
-          if (getAccount(config).chainId !== monadTestnet.id) {
-            setPaymentError('Failed to switch to Monad Testnet. Please switch manually.');
-            setIsInitiatingPayment(false);
-            return;
-          }
+          setPaymentError('Failed to switch to Monad Testnet. Please check your wallet and try again.');
+          setIsConnectingAndSwitching(false);
+          return false;
         }
       } catch (error) {
         console.error('Chain switch failed:', error);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const errMsg = (error && typeof (error as any).shortMessage === 'string' ? (error as any).shortMessage : null) || (error instanceof Error ? error.message : String(error)) || "Failed to switch network.";
         setPaymentError(`Network switch error: ${errMsg}`);
-        setIsInitiatingPayment(false);
-        return;
+        setIsConnectingAndSwitching(false);
+        return false;
       }
     }
+    setPaymentError(null);
+    setIsConnectingAndSwitching(false);
+    return true;
+  }, [isConnected, connect, connectors, switchChain, setPaymentError]);
 
-    if (!isSDKLoaded || !context?.user?.fid) {
-      console.warn('FID is not available, using default 0.');
-      // FIDがなくてもデフォルト値で進むため、ここではエラーとしない
+  const handleSendEth = useCallback(async () => {
+    setPaymentError(null);
+
+    if (!isConnected) {
+      setPaymentError("Please connect your wallet first.");
+      return;
+    }
+    if (chainId !== monadTestnet.id) {
+      setPaymentError("Please switch to the Monad Testnet first.");
+      return;
+    }
+
+    setIsInitiatingPayment(true);
+    let fidToUse = 0;
+    if (isSDKLoaded && context?.user?.fid) {
+      fidToUse = context.user.fid;
     } else {
-      fid = context.user.fid;
+      console.warn('FID is not available, using default 0.');
     }
     
     try{
@@ -369,12 +384,10 @@ const ShootingGame: React.FC = () => {
         address: '0x590dDd056fa14AC70bBc4b3e24dD109321D21688',
         abi: web3gameAbi,
         functionName: 'play',
-        args: [BigInt(fid)],
+        args: [BigInt(fidToUse)],
         value: parseEther(PLAY_AMOUNT.toString())
       });
-      setTxHash(paymentTxHash); // ★ トランザクションハッシュを設定
-      // setIsPaymentConfirmed(true); // これは waitForTransactionReceipt の責務
-      // setIsInitiatingPayment(false); // ★ 成功時 (ここではなく waitForTransactionReceipt で解除する方がよい場合もある)
+      setTxHash(paymentTxHash);
     } catch (e: unknown) {
       const error = e as Error;
       console.error('Error requesting play transaction:', error);
@@ -386,9 +399,9 @@ const ShootingGame: React.FC = () => {
       else if (error.message?.includes("insufficient funds")) friendlyMessage = "Error: Insufficient funds for transaction.";
       setPaymentError(friendlyMessage);
     } finally {
-      setIsInitiatingPayment(false); // ★ 処理が成功しても失敗しても最後に解除
+      setIsInitiatingPayment(false);
     }
-  }, [isConnected, isSDKLoaded, context, switchChain, connect, connectors, writeContractAsync]);
+  }, [isConnected, chainId, isSDKLoaded, context, writeContractAsync, setTxHash, setPaymentError, setIsInitiatingPayment]);
 
 
   const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover' | 'ranking'>('start');
@@ -1545,192 +1558,251 @@ gameStateRef.current.enemies.forEach(enemy => {
       return <div className="text-white">Loading...</div>;
     }
 
-    if (playLimit !== null && playCount >= playLimit) {
+    // 常に表示する共通ボタン
+    const rankingButton = (
+      <button
+        onClick={() => setGameState('ranking')}
+        className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
+                  transition-colors duration-200 w-full"
+      >
+        Rankings
+      </button>
+    );
+
+    if (!isConnected) {
+      return (
+        <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
+                    flex flex-col gap-4 w-4/5 max-w-xs">
+          <button
+            onClick={handleConnectAndSwitchChain}
+            className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
+                       transition-colors duration-200"
+            disabled={isConnectingAndSwitching || isConnectPending}
+          >
+            {isConnectingAndSwitching || isConnectPending ? 'Connecting...' : 'Connect Wallet'}
+          </button>
+          {rankingButton}
+          {paymentError && (
+            <div className="text-red-500 text-sm mt-1 text-center">
+              {paymentError}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (chainId !== monadTestnet.id) {
+      return (
+        <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
+                    flex flex-col gap-4 w-4/5 max-w-xs">
+          <button
+            onClick={handleConnectAndSwitchChain}
+            className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg
+                       transition-colors duration-200"
+            disabled={isConnectingAndSwitching || isSwitchChainPending}
+          >
+            {isConnectingAndSwitching || isSwitchChainPending ? 'Switching...' : 'Switch to Monad Testnet'}
+          </button>
+          {rankingButton}
+          {paymentError && (
+            <div className="text-red-500 text-sm mt-1 text-center">
+              {paymentError}
+            </div>
+          )}
+          <div className="text-white text-center text-xs mt-1">
+            Currently on: {getAccount(config).chain?.name || 'Unknown Network'}
+          </div>
+        </div>
+      );
+    }
+
+    // 接続済み かつ Monad Testnet にいる場合
+    if (playLimit !== null && playCount >= playLimit && !playPermission) {
       return (
       <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
-                  flex flex-col gap-4">
-        {!isConnected ? (
-          <button
-            onClick={doConnect}
-            className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
-                     transition-colors duration-200"
-          >
-            Connect Wallet
-          </button>
-        ) : (
+                  flex flex-col gap-4 w-4/5 max-w-xs">
+        {!isPaymentConfirmed ? (
           <>
-            {isConnected && (
-              <div className="text-white text-center mb-2">
-                Current Network: {chainId === monadTestnet.id ? 'Monad Testnet' : 'Unknown Network'}
+            <button
+              onClick={handleSendEth}
+              className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
+                           transition-colors duration-200"
+              disabled={isInitiatingPayment || isSendTxPending}
+            >
+              {isInitiatingPayment ? 'Processing...' :
+               isSendTxPending ? 'Sending...' :
+               `Pay ${PLAY_AMOUNT} MON for +1 Play`}
+            </button>
+            {paymentError && ( 
+              <div className="text-red-500 text-sm mt-1 text-center">
+                {paymentError}
               </div>
             )}
-            {!isPaymentConfirmed ? (
-              <>
-                <button
-                  onClick={handleSendEth}
-                  className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
-                           transition-colors duration-200"
-                  disabled={isInitiatingPayment || isSendTxPending || isSwitchChainPending}
-                >
-                  {isInitiatingPayment ? 'Processing...' :
-                   isSendTxPending ? 'Sending...' :
-                   isSwitchChainPending ? 'Switching Chain...' :
-                   `Pay ${PLAY_AMOUNT} MON for +1 Play`}
-                </button>
-                {paymentError && ( // ★ エラーメッセージ表示
-                  <div className="text-red-500 text-sm mt-1">
-                    {paymentError}
-                  </div>
-                )}
-                {isSendTxError && (
-                  <div className="text-red-500 text-sm">
-                    {sendTxError.message}
-                  </div>
-                )}
-                {isSwitchChainError && (
-                  <div className="text-red-500 text-sm">
-                    {switchChainError.message}
-                  </div>
-                )}
-                {txHash && (
-                  <div className="text-sm">
-                    <div>Transaction: {txHash.slice(0, 6)}...{txHash.slice(-4)}</div>
-                    <div>
-                      Status:{" "}
-                      {isConfirming
-                        ? "Confirming..."
-                        : isConfirmed
-                        ? "Confirmed!"
-                        : "Pending"}
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <button
-                onClick={handleStartGame}
-                className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
-                         transition-colors duration-200"
-              >
-                Start Game
-              </button>
+            {isSendTxError && (
+              <div className="text-red-500 text-sm text-center">
+                {sendTxError.message}
+              </div>
+            )}
+            {txHash && (
+              <div className="text-sm text-white text-center">
+                <div>Transaction: {txHash.slice(0, 6)}...{txHash.slice(-4)}</div>
+                <div>
+                  Status:{" "}
+                  {isConfirming
+                    ? "Confirming..."
+                    : isConfirmed
+                    ? "Confirmed!"
+                    : "Pending"}
+                </div>
+              </div>
             )}
           </>
+        ) : (
+          <button
+            onClick={handleStartGame}
+            className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
+                         transition-colors duration-200"
+          >
+            Start Game
+          </button>
         )}
-        <button
-          onClick={() => setGameState('ranking')}
-          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
-                    transition-colors duration-200"
-        >
-          Rankings
-        </button>
+        {rankingButton}
       </div>
       );
     }
 
     return (
       <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
-                    flex flex-col gap-4">
+                    flex flex-col gap-4 w-4/5 max-w-xs">
         <button
-          onClick={initGame}
+          onClick={handleStartGame} // initGame から handleStartGame に変更 (プレイ回数消費のため)
           className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
                    transition-colors duration-200"
         >
           Start Game
-          {playLimit && (
+          {playLimit !== null && (
             <div className="text-sm">
-              {playLimit - playCount} Plays Remaining
+              {Math.max(0, playLimit - playCount)} Plays Remaining
             </div>
           )}
         </button>
-        
-        <button
-          onClick={() => setGameState('ranking')}
-          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
-                   transition-colors duration-200"
-        >
-          Rankings
-        </button>
+        {rankingButton}
       </div>
     );
   };
 
   // ゲームオーバー画面のボタン表示も条件分岐
   const renderGameOverButtons = () => {
+    // 共通ボタンの定義
+    const rankingAndShareButtons = (
+      <div className="flex gap-3 mt-4 w-full max-w-xs px-4">
+        <button
+          onClick={() => setGameState('ranking')}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg
+                   transition-colors duration-200 flex-1"
+        >
+          Rankings
+        </button>
+        <button
+          onClick={() => openShare(`I scored ${score.toLocaleString()} points in MONAD Shooter!`)}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg
+                   transition-colors duration-200 flex-1"
+        >
+          Share
+        </button>
+      </div>
+    );
+
+    const mintNftSection = (
+      <div className="bg-gray-800 bg-opacity-90 rounded-xl p-1 mx-4 w-full max-w-xs shadow-lg border border-gray-700">
+        <div className="text-center mb-1">
+          <h3 className="text-white text-lg font-bold">⭐Mint Your Achievement NFT⭐</h3>
+        </div>
+        <div className="relative bg-gray-900 rounded-lg p-1 mb-2">
+          <img 
+            src={`/images/nft-preview-${getScoreTier(score)}.png`} 
+            alt="NFT Preview" 
+            className="w-full h-auto object-contain mx-auto"
+          />
+          <div className="absolute top-2 right-2 bg-gray-800 bg-opacity-80 px-2 py-1 rounded-md">
+            <span className="text-xs font-medium text-white uppercase">{getScoreTier(score)}</span>
+          </div>
+        </div>
+        <button
+          onClick={mintNFT}
+          className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg
+                  transition-colors duration-200 w-full mb-3"
+          disabled={isMintingNFT || isMintConfirming || mintSuccess || isConnectingAndSwitching || isConnectPending || (chainId !== monadTestnet.id && !isSwitchChainPending)}
+        >
+          {isConnectingAndSwitching || isConnectPending ? 'Connecting Wallet...' :
+           isSwitchChainPending ? 'Switching Network...' :
+           isMintingNFT ? 'Processing Mint...' :
+           isMintConfirming ? 'Confirming Mint...' :
+           mintSuccess ? 'NFT Minted!' :
+           'Mint NFT (0.1 MON)'}
+        </button>
+        {mintError && (
+          <div className="text-red-400 text-sm mb-3 text-center">
+            {mintError}
+          </div>
+        )}
+        {mintTxHash && (
+          <div className="text-gray-300 text-sm mb-3 text-center">
+            TX: {mintTxHash.slice(0, 6)}...{mintTxHash.slice(-4)}
+          </div>
+        )}
+      </div>
+    );
+
     if (playLimit !== null && playCount >= playLimit && !playPermission) {
       return (
         <div className="absolute inset-0 flex flex-col items-center">
-          {/* スコア表示を上部に移動 */}
           <div className="mt-1 text-center">
             <h2 className="text-white text-2xl font-bold mb-1">Game Over</h2>
-{/*             <div className="text-white text-2xl font-bold mb-2">{score.toLocaleString()} pts</div>
- */}          </div>
+          </div>
+          {mintNftSection}
           
-          {/* モーダル風のNFT表示 */}
-          <div className="bg-gray-800 bg-opacity-90 rounded-xl p-1 mx-4 w-full max-w-xs shadow-lg border border-gray-700">
-            <div className="text-center mb-1">
-              <h3 className="text-white text-lg font-bold">⭐Mint Your Achievement NFT⭐</h3>
-            </div>
-            
-            <div className="relative bg-gray-900 rounded-lg p-1 mb-2">
-              <img 
-                src={`/images/nft-preview-${getScoreTier(score)}.png`} 
-                alt="NFT Preview" 
-                className="w-full h-auto object-contain mx-auto"
-              />
-              <div className="absolute top-2 right-2 bg-gray-800 bg-opacity-80 px-2 py-1 rounded-md">
-                <span className="text-xs font-medium text-white uppercase">{getScoreTier(score)}</span>
-              </div>
-            </div>
-            
-            {/* ミントボタン */}
-            <button
-              onClick={mintNFT}
-              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg
-                      transition-colors duration-200 w-full mb-3"
-              disabled={isMintingNFT || isMintConfirming || mintSuccess}
-            >
-              {isMintingNFT ? 'Processing...' :
-               isMintConfirming ? 'Confirming...' :
-               mintSuccess ? 'NFT Minted!' :
-               'Mint NFT(0.1 MON)'}
-            </button>
-            
-            {mintError && (
-              <div className="text-red-400 text-sm mb-3 text-center">
-                {mintError}
-              </div>
-            )}
-            
-            {mintTxHash && (
-              <div className="text-gray-300 text-sm mb-3 text-center">
-                TX: {mintTxHash.slice(0, 6)}...{mintTxHash.slice(-4)}
-              </div>
-            )}
-            
-            {/* プレイ回数制限のため、追加プレイ用の支払いボタン */}
+          {/* ウォレット接続、ネットワーク切り替え、支払いボタン */} 
+          <div className="mt-3 w-full max-w-xs px-4">
             {!isConnected ? (
               <button
-                onClick={() => connect({ connector: connectors[0] })}
+                onClick={handleConnectAndSwitchChain}
                 className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
                          transition-colors duration-200 w-full mb-1"
+                disabled={isConnectingAndSwitching || isConnectPending}
               >
-                Connect Wallet
+                {isConnectingAndSwitching || isConnectPending ? 'Connecting...' : 'Connect Wallet to Pay for Next Play'}
               </button>
-            ) : (
+            ) : chainId !== monadTestnet.id ? (
+              <button
+                onClick={handleConnectAndSwitchChain}
+                className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg
+                           transition-colors duration-200 w-full mb-1"
+                disabled={isConnectingAndSwitching || isSwitchChainPending}
+              >
+                {isConnectingAndSwitching || isSwitchChainPending ? 'Switching...' : 'Switch to Monad Testnet to Pay'}
+              </button>
+            ) : !isPaymentConfirmed ? (
               <button
                 onClick={handleSendEth}
                 className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
                          transition-colors duration-200 w-full mb-1"
-                disabled={isInitiatingPayment || isSendTxPending || isSwitchChainPending}
+                disabled={isInitiatingPayment || isSendTxPending}
               >
                 {isInitiatingPayment ? 'Processing...' :
                  isSendTxPending ? 'Sending...' : 
-                 isSwitchChainPending ? 'Switching Chain...' :
                  `Pay ${PLAY_AMOUNT} MON for +1 Play`}
               </button>
+            ) : (
+               <button
+                onClick={handleStartGame} // 支払いが済んでいれば直接スタート
+                className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg
+                         transition-colors duration-200 w-full mb-1"
+              >
+                Start Next Game
+              </button>
             )}
-            {paymentError && ( // ★ エラーメッセージ表示
+            {paymentError && ( 
               <div className="text-red-400 text-sm mt-1 text-center">
                 {paymentError}
               </div>
@@ -1740,13 +1812,8 @@ gameStateRef.current.enemies.forEach(enemy => {
                 {sendTxError.message}
               </div>
             )}
-            {isSwitchChainError && (
-              <div className="text-red-500 text-sm text-center mb-2">
-                {switchChainError.message}
-              </div>
-            )}
             {txHash && (  
-              <div className="text-sm text-center mb-2">
+              <div className="text-sm text-white text-center mb-2">
                 <div>TX: {txHash.slice(0, 6)}...{txHash.slice(-4)}</div>
                 <div>
                   Status: {isConfirming ? "Confirming..." : isConfirmed ? "Confirmed!" : "Pending"}
@@ -1754,105 +1821,33 @@ gameStateRef.current.enemies.forEach(enemy => {
               </div>
             )}
           </div>
-          
-          {/* ランキングとシェアボタンを画面下部に配置 */}
-          <div className="flex gap-3 mt-4 w-full max-w-xs px-4">
-            <button
-              onClick={() => setGameState('ranking')}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg
-                       transition-colors duration-200 flex-1"
-            >
-              Rankings
-            </button>
-            <button
-              onClick={() => openShare(`I scored ${score.toLocaleString()} points in MONAD Shooter!`)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg
-                       transition-colors duration-200 flex-1"
-            >
-              Share
-            </button>
-          </div>
+          {rankingAndShareButtons}
         </div>
       );
     }
 
-    // 通常のゲームオーバー画面（プレイ回数制限なし）
+    // 通常のゲームオーバー画面（プレイ回数制限なし、またはまだ余裕がある場合）
     return (
       <div className="absolute inset-0 flex flex-col items-center">
-        {/* スコア表示を上部に移動 */}
         <div className="mt-4 text-center">
           <h2 className="text-white text-2xl font-bold mb-1">Game Over</h2>
         </div>
-        
-        {/* モーダル風のNFT表示 */}
-        <div className="bg-gray-800 bg-opacity-90 rounded-xl p-1 mx-4 w-full max-w-xs shadow-lg border border-gray-700">
-          <div className="text-center mb-3">
-          <h3 className="text-white text-lg font-bold">⭐Mint Your Achievement NFT⭐</h3>
-          </div>
-          
-          <div className="relative bg-gray-900 rounded-lg p-1 mb-2">
-            <img 
-              src={`/images/nft-preview-${getScoreTier(score)}.png`} 
-              alt="NFT Preview" 
-              className="w-full h-auto object-contain mx-auto"
-            />
-            <div className="absolute top-2 right-2 bg-gray-800 bg-opacity-80 px-2 py-1 rounded-md">
-              <span className="text-xs font-medium text-white uppercase">{getScoreTier(score)}</span>
-            </div>
-          </div>
-          
-          {/* ミントボタン */}
-          <button
-            onClick={mintNFT}
-            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg
-                    transition-colors duration-200 w-full mb-3"
-            disabled={isMintingNFT || isMintConfirming}
-          >
-            {isMintingNFT ? 'Processing...' :
-             isMintConfirming ? 'Confirming...' :
-             mintSuccess ? 'NFT Minted!' :
-             'Mint NFT(0.1 MON)'}
-          </button>
-          
-          {mintError && (
-            <div className="text-red-400 text-sm mb-3 text-center">
-              {mintError}
-            </div>
-          )}
-          
-          {mintTxHash && (
-            <div className="text-gray-300 text-sm mb-3 text-center">
-              TX: {mintTxHash.slice(0, 6)}...{mintTxHash.slice(-4)}
-            </div>
-          )}
-          
-          {/* リプレイボタン */}
+        {mintNftSection}
+        <div className="w-full max-w-xs px-4 mt-3">
           <button
             onClick={handleStartGame}
             className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg
                      transition-colors duration-200 w-full mb-3"
           >
             Play Again
+            {playLimit !== null && (
+                <div className="text-sm">
+                  {Math.max(0, playLimit - playCount)} Plays Remaining
+                </div>
+            )}
           </button>
         </div>
-        
-        {/* ランキングとシェアボタンを画面下部に配置 */}
-        <div className="flex gap-3 mt-4 w-full max-w-xs px-4">
-          <button
-            onClick={() => setGameState('ranking')}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg
-                     transition-colors duration-200 flex-1"
-          >
-            Rankings
-          </button>
-          <button
-            onClick={() => openShare(`I scored ${score.toLocaleString()} points in MONAD Shooter!`)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg
-                     transition-colors duration-200 flex-1"
-          >
-            Share
-          </button>
-        </div>
+        {rankingAndShareButtons}
       </div>
     );
   };
@@ -1880,9 +1875,9 @@ gameStateRef.current.enemies.forEach(enemy => {
     if (!isConnected || !address) {
       console.error('Wallet not connected');
       // ウォレットが接続されていない場合、接続を試みる
-      await doConnect();
-      // doConnect内でエラーが発生した場合やユーザーが接続をキャンセルした場合を考慮し、
-      // 再度 isConnected と address をチェックするか、doConnect の結果をハンドリングする必要があるかもしれません。
+      await handleConnectAndSwitchChain();
+      // handleConnectAndSwitchChain内でエラーが発生した場合やユーザーが接続をキャンセルした場合を考慮し、
+      // 再度 isConnected と address をチェックするか、handleConnectAndSwitchChain の結果をハンドリングする必要があるかもしれません。
       // ここではシンプルに return します。接続成功後に再度この関数が呼ばれることを期待します。
       if (!isConnected || !address) { // 再度チェック
         return null; // 接続されなければnullを返す
@@ -1923,7 +1918,7 @@ gameStateRef.current.enemies.forEach(enemy => {
   // NFTをミントする関数
   const mintNFT = async () => {
     if (!isConnected || !address) {
-      await doConnect();
+      await handleConnectAndSwitchChain();
       return;
     }
 

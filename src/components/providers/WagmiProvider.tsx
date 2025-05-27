@@ -43,8 +43,9 @@ function useCoinbaseWalletAutoConnect() {
 }
 
 export const config = createConfig({
-  chains: [monadTestnet],
+  chains: [base, monadTestnet],
   transports: {
+    [base.id]: http(),
     [monadTestnet.id]: http(),
   },
   connectors: [
