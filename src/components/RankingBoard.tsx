@@ -56,7 +56,15 @@ const RankingBoard: React.FC<RankingBoardProps> = ({ rankings = [], onBack }) =>
   return (
     <div className="w-full h-full flex flex-col items-center bg-gray-900 text-white p-4">
       {/* ヘッダー */}
-      <div className="text-2xl font-bold mb-6">Ranking</div>
+      <div className="text-2xl font-bold ">Ranking</div>
+      {/* 戻るボタン */}
+      <button
+        onClick={onBack}
+        className="mt-1 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg
+                   transition-colors duration-200"
+      >
+        back
+      </button>
 
       {/* トップ3 */}
       <div className="w-full flex flex-col gap-4 mb-8">

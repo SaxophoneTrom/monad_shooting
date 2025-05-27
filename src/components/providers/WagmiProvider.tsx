@@ -35,7 +35,7 @@ function useCoinbaseWalletAutoConnect() {
   useEffect(() => {
     // Auto-connect if in Coinbase Wallet and not already connected
     if (isCoinbaseWallet && !isConnected) {
-      connect({ connector: connectors[1] }); // Coinbase Wallet connector
+      connect({ connector: connectors[0] }); // farcasterFrame connector
     }
   }, [isCoinbaseWallet, isConnected, connect, connectors]);
 

@@ -340,9 +340,12 @@ const ShootingGame: React.FC = () => {
         await switchChain({ chainId: monadTestnet.id });
         // switchChain成功後、再度チェーンIDを確認
         if (getAccount(config).chainId !== monadTestnet.id) {
-          setPaymentError('Failed to switch to Monad Testnet. Please switch manually.');
-          setIsInitiatingPayment(false);
-          return;
+          await switchChain({ chainId: monadTestnet.id });
+          if (getAccount(config).chainId !== monadTestnet.id) {
+            setPaymentError('Failed to switch to Monad Testnet. Please switch manually.');
+            setIsInitiatingPayment(false);
+            return;
+          }
         }
       } catch (error) {
         console.error('Chain switch failed:', error);
@@ -582,7 +585,7 @@ const ShootingGame: React.FC = () => {
     const pattern = Math.random();
 
     if(gameStateRef.current.bossClearCount === 0){
-      baseSpeed = baseSpeed * 0.7;
+      baseSpeed = baseSpeed * 0.6;
     }else{
       baseSpeed = baseSpeed * 1.2;
     }
@@ -837,7 +840,12 @@ const updateBossAttack = (timestamp: number, boss: Boss) => {
   const spawnEnemy = (timestamp: number) => {
     if (timestamp - gameStateRef.current.lastEnemySpawn > 800) {
       // 通常のスポーン処理
-      const baseEnemyCount = Math.floor(Math.random() * 3) + 2;
+      let baseEnemyCount = Math.floor(Math.random() * 3) + 2;
+      
+      // ボス未撃破の場合、敵の数を半分にする
+      if (gameStateRef.current.bossClearCount === 0) {
+        baseEnemyCount = Math.max(1, Math.floor(baseEnemyCount / 2)); // 最低1体は出現するようにする
+      }
       
       // パワーアップ状態に応じて追加の敵をスポーン
       const powerLevel = gameStateRef.current.shotLevel;
@@ -886,7 +894,7 @@ const updateBossAttack = (timestamp: number, boss: Boss) => {
         if (powerLevel === 2) {
           newEnemy.lastShot = timestamp; // 最初の射撃までの時間を短縮
           if (newEnemy.type === 'shooter') {
-            newEnemy.speed *= 0.8; // シューター型は少しゆっくりに
+            newEnemy.speed *= 0.4; // シューター型は少しゆっくりに
           }
         }
 
@@ -1541,9 +1549,6 @@ gameStateRef.current.enemies.forEach(enemy => {
       return (
       <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
                   flex flex-col gap-4">
-        <div className="text-white text-center mb-2">
-          Play limit reached
-        </div>
         {!isConnected ? (
           <button
             onClick={doConnect}
@@ -1683,7 +1688,7 @@ gameStateRef.current.enemies.forEach(enemy => {
               onClick={mintNFT}
               className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg
                       transition-colors duration-200 w-full mb-3"
-              disabled={isMintingNFT || isMintConfirming}
+              disabled={isMintingNFT || isMintConfirming || mintSuccess}
             >
               {isMintingNFT ? 'Processing...' :
                isMintConfirming ? 'Confirming...' :
