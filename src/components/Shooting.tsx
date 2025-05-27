@@ -1835,11 +1835,6 @@ gameStateRef.current.enemies.forEach(enemy => {
                      transition-colors duration-200 w-full mb-3"
           >
             Play Again
-            {playLimit !== null && (
-                <div className="text-sm">
-                  {Math.max(0, playLimit - playCount)} Plays Remaining
-                </div>
-            )}
           </button>
         </div>
         {rankingAndShareButtons}
