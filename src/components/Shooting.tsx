@@ -421,6 +421,15 @@ const ShootingGame: React.FC = () => {
   // 許可フラグを追加
   const [playPermission, setPlayPermission] = useState(false);
 
+  // SDK loaded後にready()を呼び出してネイティブジェスチャーを無効化
+  useEffect(() => {
+    if (isSDKLoaded) {
+      sdk.actions.ready({
+        disableNativeGestures: true  // ネイティブジェスチャーを無効化
+      });
+    }
+  }, [isSDKLoaded]);
+
   // SDKロード完了後にプレイ制限を取得
   useEffect(() => {
     const fetchPlayLimit = async () => {
