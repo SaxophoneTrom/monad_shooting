@@ -309,15 +309,7 @@ const ShootingGame: React.FC = () => {
         if (isWarpcast) {
           await connect({ connector: connectors[0] });
         } else {
-          if (connectors.length > 2 && connectors[2]) { // MetaMask
-            await connect({ connector: connectors[2] });
-          } else if (connectors.length > 1 && connectors[1]) { // Coinbase Wallet
-            await connect({ connector: connectors[1] });
-          } else if (connectors.length > 0 && connectors[0]) { // Fallback
-            await connect({ connector: connectors[0] });
-          } else {
-            throw new Error("No suitable wallet connector found.");
-          }
+          await connect({ connector: connectors[0] });
         }
         connectedSuccessfully = getAccount(config).isConnected;
         if (!connectedSuccessfully) {

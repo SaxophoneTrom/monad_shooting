@@ -50,17 +50,6 @@ export const config = createConfig({
   },
   connectors: [
     farcasterFrame(),
-    coinbaseWallet({
-      appName: APP_NAME,
-      appLogoUrl: APP_ICON_URL,
-      preference: 'all',
-    }),
-    metaMask({
-      dappMetadata: {
-        name: APP_NAME,
-        url: APP_URL,
-      },
-    }),
   ],
 });
 
