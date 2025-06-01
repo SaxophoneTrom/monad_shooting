@@ -506,6 +506,12 @@ const ShootingGame: React.FC = () => {
     bossClearCount:0,
   });
 
+  // タイトルアニメーション用の状態管理
+  const titleAnimationRef = useRef({
+    startTime: 0,
+    typingComplete: false
+  });
+
   const touchStateRef = useRef<{
     touchStartX: number | null;
     initialPlayerPos: number | null;
@@ -971,6 +977,25 @@ const updateBossAttack = (timestamp: number, boss: Boss) => {
     const deltaTime = timestamp - gameStateRef.current.lastRender;
     gameStateRef.current.lastRender = timestamp;
 
+    // タイトル画面でも星を更新（下方向に移動）
+    if (gameState === 'start') {
+      gameStateRef.current.stars = gameStateRef.current.stars.map(star => {
+        const newY = star.y + star.speed * (deltaTime / 16);
+        // 画面外に出た星を上端に戻す
+        return newY > GAME_HEIGHT ? {
+            ...star,
+            y: -10,
+            x: Math.random() * GAME_WIDTH
+        } : {
+            ...star,
+            y: newY
+        };
+      });
+      
+      drawGame();
+      animationFrameRef.current = requestAnimationFrame(updateGame);
+      return;
+    }
 
     // ボスフェーズの判定と生成
     if (!gameStateRef.current.isBossPhase && 
@@ -980,10 +1005,7 @@ const updateBossAttack = (timestamp: number, boss: Boss) => {
     gameStateRef.current.lastBossScore = gameStateRef.current.score; // 現在のスコアを記録
     gameStateRef.current.boss = createBoss();
     gameStateRef.current.enemies = []; // ザコ敵をクリア
-    
-
   }
-
 
     gameStateRef.current.stars = gameStateRef.current.stars.map(star => {
     const newY = star.y + star.speed * (deltaTime / 16);
@@ -1270,10 +1292,86 @@ const drawGame = () => {
   ctx.globalAlpha = 1;
 
   if (gameState === 'start') {
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '24px Arial';
+    // タイピングアニメーション用のタイマー設定
+    if (titleAnimationRef.current.startTime === 0) {
+      titleAnimationRef.current.startTime = Date.now();
+      titleAnimationRef.current.typingComplete = false;
+    }
+
+    const elapsed = Date.now() - titleAnimationRef.current.startTime;
+    const fullText = 'MONAD Shoot \'em ups';
+    const typingSpeed = 100; // 1文字あたりのミリ秒
+    const displayLength = Math.min(Math.floor(elapsed / typingSpeed), fullText.length);
+    const displayText = fullText.substring(0, displayLength);
+
+    // タイピング完了判定
+    if (displayLength >= fullText.length && !titleAnimationRef.current.typingComplete) {
+      titleAnimationRef.current.typingComplete = true;
+    }
+
+    // ネオンサイン風のタイトル描画
+    const centerX = GAME_WIDTH / 2;
+    const centerY = GAME_HEIGHT / 3;
+
+    // 大きなフォントサイズ
+    ctx.font = 'bold 32px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('MONAD Shoot \'em ups', GAME_WIDTH / 2, GAME_HEIGHT / 3);
+    ctx.textBaseline = 'middle';
+
+    // グラデーション作成
+    const gradient = ctx.createLinearGradient(0, centerY - 20, 0, centerY + 20);
+    gradient.addColorStop(0, '#00d4ff');    // シアン
+    gradient.addColorStop(0.3, '#0099ff');  // ブルー
+    gradient.addColorStop(0.6, '#6600ff');  // パープル
+    gradient.addColorStop(1, '#ff0099');    // マゼンタ
+
+    // 発光エフェクト（アウターグロー）
+    ctx.shadowColor = '#00d4ff';
+    ctx.shadowBlur = 30;
+    ctx.strokeStyle = '#00d4ff';
+    ctx.lineWidth = 4;
+    ctx.strokeText(displayText, centerX, centerY);
+
+    // 中間グロー
+    ctx.shadowBlur = 15;
+    ctx.strokeStyle = '#0099ff';
+    ctx.lineWidth = 2;
+    ctx.strokeText(displayText, centerX, centerY);
+
+    // メインテキスト（グラデーション）
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = gradient;
+    ctx.fillText(displayText, centerX, centerY);
+
+    // インナーグロー（白いハイライト）
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 5;
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.7;
+    ctx.fillText(displayText, centerX, centerY);
+
+    // 設定リセット
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
+
+    // タイピング完了後のカーソル点滅効果
+    if (titleAnimationRef.current.typingComplete) {
+      const blinkSpeed = 500; // 点滅間隔
+      const showCursor = Math.floor(elapsed / blinkSpeed) % 2 === 0;
+      
+      if (showCursor) {
+        const textWidth = ctx.measureText(displayText).width;
+        const cursorX = centerX + textWidth / 2 + 10;
+        
+        ctx.fillStyle = '#00d4ff';
+        ctx.shadowColor = '#00d4ff';
+        ctx.shadowBlur = 10;
+        ctx.fillRect(cursorX, centerY - 16, 3, 32);
+        ctx.shadowBlur = 0;
+      }
+    }
+
     return;
   }
 
@@ -1514,13 +1612,25 @@ gameStateRef.current.enemies.forEach(enemy => {
 
   useEffect(() => {
     drawGame();
-    if (gameState === 'playing') {
+    if (gameState === 'playing' || gameState === 'start') {
       animationFrameRef.current = requestAnimationFrame(updateGame);
     }
     if (gameState === 'gameover') {
       if(!IS_DEBUG){
         submitScore();
       }
+    }
+    // タイトル画面に切り替わったときに星を明るくする
+    if (gameState === 'start') {
+      gameStateRef.current.stars = gameStateRef.current.stars.map(star => ({
+        ...star,
+        brightness: Math.random() * 0.7 + 0.3,  // 0.3-1.0の明るさに変更
+        size: Math.random() * 1.2 + 0.3,        // より大きめに
+        speed: Math.random() * 2 + 0.5           // 0.5-2.5の速度
+      }));
+      // タイピングアニメーションをリセット
+      titleAnimationRef.current.startTime = 0;
+      titleAnimationRef.current.typingComplete = false;
     }
     return () => {
       if (animationFrameRef.current) {
