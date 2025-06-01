@@ -405,6 +405,17 @@ const ShootingGame: React.FC = () => {
   const [isLoadingRankings, setIsLoadingRankings] = useState(false);
   const [scoreSubmitted, setScoreSubmitted] = useState(false);
 
+  // 統計情報用のstate
+  const [stats, setStats] = useState<{
+    todayHighScore: number;
+    totalPlayers: number;
+  }>({
+    todayHighScore: 0,
+    totalPlayers: 0
+  });
+  const [isLoadingStats, setIsLoadingStats] = useState(true); // 初期状態でローディング中に設定
+  const [statsLoaded, setStatsLoaded] = useState(false); // データ取得完了フラグを追加
+
   // プレイ限度回数
   const [playCount, setPlayCount] = useState<number>(0);
   const [playLimit, setPlayLimit] = useState<number | null>(null);
@@ -465,6 +476,28 @@ const ShootingGame: React.FC = () => {
     }
   };
 
+  // 統計情報を取得する関数
+  const fetchStats = async () => {
+    setIsLoadingStats(true);
+    try {
+      const response = await fetch('/api/stats');
+      const data = await response.json();
+      
+      if (data.success) {
+        setStats(data.stats);
+        setStatsLoaded(true);
+        // refも更新
+        statsRef.current.loaded = true;
+        statsRef.current.data = data.stats;
+      } else {
+        console.error('Stats API returned success: false');
+      }
+    } catch (error) {
+      console.error('Failed to fetch stats:', error);
+    } finally {
+      setIsLoadingStats(false);
+    }
+  };
 
   const gameAreaRef = useRef<HTMLCanvasElement | null>(null);
   const images = useGameImages();
@@ -510,6 +543,15 @@ const ShootingGame: React.FC = () => {
   const titleAnimationRef = useRef({
     startTime: 0,
     typingComplete: false
+  });
+
+  // 統計情報用のref
+  const statsRef = useRef({
+    loaded: false,
+    data: {
+      todayHighScore: 0,
+      totalPlayers: 0
+    }
   });
 
   const touchStateRef = useRef<{
@@ -584,6 +626,8 @@ const ShootingGame: React.FC = () => {
       setScoreSubmitted(true); // 送信成功時にフラグを立てる
       // スコア送信後に最新のランキングを取得
       await fetchRankings();
+      // 統計情報も更新
+      await fetchStats();
       console.log('Score submitted successfully');
     } catch (error) {
       console.error('Error submitting score:', error);
@@ -1311,7 +1355,7 @@ const drawGame = () => {
 
     // ネオンサイン風のタイトル描画
     const centerX = GAME_WIDTH / 2;
-    const centerY = GAME_HEIGHT / 3;
+    const centerY = GAME_HEIGHT / 4; // 位置を少し上に移動
 
     // 大きなフォントサイズ
     ctx.font = 'bold 32px Arial';
@@ -1370,6 +1414,47 @@ const drawGame = () => {
         ctx.fillRect(cursorX, centerY - 16, 3, 32);
         ctx.shadowBlur = 0;
       }
+    }
+
+    // 統計情報の表示（データ取得完了後のみ）
+    if (statsRef.current.loaded) {
+      const statsY = centerY + 80; // タイトルの下に配置
+      
+      // 統計情報のスタイル設定
+      ctx.font = 'bold 16px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      // Today's High Score - 控えめなスタイル
+      const todayText = `Today's High Score: ${statsRef.current.data.todayHighScore.toLocaleString()}`;
+      
+      // 軽い発光エフェクトのみ
+      ctx.shadowColor = '#87ceeb';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#87ceeb';
+      ctx.fillText(todayText, centerX, statsY);
+      
+      // Total Players - 控えめなスタイル
+      const playersText = `Total Players: ${statsRef.current.data.totalPlayers.toLocaleString()}`;
+      const playersStatsY = statsY + 30;
+      
+      ctx.shadowColor = '#dda0dd';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#dda0dd';
+      ctx.fillText(playersText, centerX, playersStatsY);
+      
+      // 設定リセット
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
+    }
+
+    // ローディング表示（データ取得中または未取得時）
+    if (!statsRef.current.loaded) {
+      const statsY = centerY + 80;
+      ctx.font = '16px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#888888';
+      ctx.fillText('Loading stats...', centerX, statsY);
     }
 
     return;
@@ -1643,8 +1728,15 @@ gameStateRef.current.enemies.forEach(enemy => {
   useEffect(() => {
     if (isSDKLoaded && context?.user.fid) {
       fetchRankings();
+      fetchStats(); // 統計情報も取得
     }
   }, [isSDKLoaded, context]);
+
+  // statsLoadedの変化を監視
+  useEffect(() => {
+    console.log('statsLoaded changed to:', statsLoaded);
+    console.log('Current stats:', stats);
+  }, [statsLoaded, stats]);
 
   const openFrameIntro = useCallback(() => {
     sdk.actions.openUrl('https://warpcast.com/saxophone55.eth/0xe1c34641');
