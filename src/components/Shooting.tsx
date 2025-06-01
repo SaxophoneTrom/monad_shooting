@@ -1871,7 +1871,7 @@ gameStateRef.current.enemies.forEach(enemy => {
         </button>
         {mintError && (
           <div className="text-red-400 text-sm mb-3 text-center">
-            {mintError}
+            Mint failed. Please try again.
           </div>
         )}
         {mintTxHash && (
@@ -1927,14 +1927,9 @@ gameStateRef.current.enemies.forEach(enemy => {
                 Start Next Game
               </button>
             )}
-            {writeError && (
+            {(writeError || (isSendTxError && sendTxError)) && (
               <div className="text-red-400 text-sm mt-1 text-center">
-                Error: {writeError.message}
-              </div>
-            )}
-            {isSendTxError && (
-              <div className="text-red-500 text-sm text-center mb-2">
-                {sendTxError.message}
+                Transaction failed. Please try again.
               </div>
             )}
             {txHash && (  
