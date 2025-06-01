@@ -1743,9 +1743,9 @@ gameStateRef.current.enemies.forEach(enemy => {
   }, []);
 
   const openShare = useCallback((sentence:string) => {
-    const url = process.env.NEXT_PUBLIC_URL || "https://monad-shooting.vercel.app/";
+    const url = "https://farcaster.xyz/miniapps/eag5A1w4mqRl/monad-shootumup";
     //const url = "https://moxie-frame-kit.vercel.app/";
-    const inputSentence = sentence + "\n\nMini App by @saxophone55.eth";
+    const inputSentence = sentence;// + "\n\nMini App by @saxophone55.eth";
     const shareUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(inputSentence)}&embeds%5B%5D=${encodeURIComponent(url)}`
     sdk.actions.openUrl(shareUrl);
   }, []);
