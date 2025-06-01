@@ -19,7 +19,6 @@ import {
   usePublicClient,
   useWriteContract
 } from "wagmi";
-import { getAccount } from 'wagmi/actions'; // ★ getAccount をインポート
 import { monadTestnet } from "wagmi/chains";
 import { config } from "~/components/providers/WagmiProvider";
 import { parseEther } from 'viem/utils';
@@ -252,8 +251,7 @@ const ShootingGame: React.FC = () => {
   const {isSDKLoaded, context, added, notificationDetails, lastEvent, addFrame, addFrameResult, openUrl, close } = useFrame();
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
+  const { address, isConnected, chain } = useAccount();
   const [fid, setFid] = useState(0);
   
   const {
@@ -268,7 +266,8 @@ const ShootingGame: React.FC = () => {
       hash: txHash as `0x${string}`,
     });
 
-  const { connect, connectors, isPending: isConnectPending } = useConnect();
+  const { connect, connectors } = useConnect();
+  const { disconnect } = useDisconnect();
 
   const {
     switchChain,
@@ -278,7 +277,7 @@ const ShootingGame: React.FC = () => {
   } = useSwitchChain();
 
   const [isPaymentConfirmed, setIsPaymentConfirmed] = useState(false);
-  const { data: hash, writeContractAsync } = useWriteContract() // ★ writeContract を writeContractAsync に変更
+  const { data: hash, writeContractAsync, error: writeError, isPending: isWritePending } = useWriteContract();
 
   // NFTミント関連のステート
   const [isMintingNFT, setIsMintingNFT] = useState(false);
@@ -293,82 +292,27 @@ const ShootingGame: React.FC = () => {
       expiry: number;
     };
   } | null>(null);
-  const [isInitiatingPayment, setIsInitiatingPayment] = useState(false); // 新しいステート
-  const [paymentError, setPaymentError] = useState<string | null>(null); // ★ エラーメッセージ用state
-  const [isConnectingAndSwitching, setIsConnectingAndSwitching] = useState(false); // 新しいstate: 接続・スイッチ処理中フラグ
 
-  const handleConnectAndSwitchChain = useCallback(async () => {
-    setIsConnectingAndSwitching(true);
-    setPaymentError(null);
-    let connectedSuccessfully = isConnected;
-
-    if (!connectedSuccessfully) {
-      const userAgent = navigator.userAgent;
-      const isWarpcast = userAgent.includes("Warpcast");
-      try {
-        if (isWarpcast) {
-          await connect({ connector: connectors[0] });
-        } else {
-          await connect({ connector: connectors[0] });
-        }
-        connectedSuccessfully = getAccount(config).isConnected;
-        if (!connectedSuccessfully) {
-          setPaymentError("Wallet connection failed. Please try again.");
-          setIsConnectingAndSwitching(false);
-          return false;
-        }
-      } catch (error) {
-        console.error("Wallet connection error:", error);
-        setPaymentError(error instanceof Error ? error.message : "Failed to connect wallet.");
-        setIsConnectingAndSwitching(false);
-        return false;
-      }
+  // 簡素化：複雑なステートを削除
+  const handleConnect = useCallback(() => {
+    if (connectors[0]) {
+      connect({ connector: connectors[0] });
     }
+  }, [connect, connectors]);
 
-    const currentChainId = getAccount(config).chainId;
-    if (currentChainId !== monadTestnet.id) {
-      try {
-        await switchChain({ chainId: monadTestnet.id });
-        // 少し待機してから再度チェーンIDを確認
-        await new Promise(resolve => setTimeout(resolve, 2500)); // 2.5秒待機
-
-        if (getAccount(config).chainId !== monadTestnet.id) {
-          setPaymentError('Failed to switch to Monad Testnet. Please check your wallet and try again.');
-          setIsConnectingAndSwitching(false);
-          return false;
-        }
-      } catch (error) {
-        console.error('Chain switch failed:', error);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const errMsg = (error && typeof (error as any).shortMessage === 'string' ? (error as any).shortMessage : null) || (error instanceof Error ? error.message : String(error)) || "Failed to switch network.";
-        setPaymentError(`Network switch error: ${errMsg}`);
-        setIsConnectingAndSwitching(false);
-        return false;
-      }
+  const handleSwitchToMonad = useCallback(() => {
+    if (chain?.id !== monadTestnet.id) {
+      switchChain({ chainId: monadTestnet.id });
     }
-    setPaymentError(null);
-    setIsConnectingAndSwitching(false);
-    return true;
-  }, [isConnected, connect, connectors, switchChain, setPaymentError]);
+  }, [chain?.id, switchChain]);
 
   const handleSendEth = useCallback(async () => {
-    setPaymentError(null);
+    if (!isConnected) return;
+    if (chain?.id !== monadTestnet.id) return;
 
-    if (!isConnected) {
-      setPaymentError("Please connect your wallet first.");
-      return;
-    }
-    if (chainId !== monadTestnet.id) {
-      setPaymentError("Please switch to the Monad Testnet first.");
-      return;
-    }
-
-    setIsInitiatingPayment(true);
     let fidToUse = 0;
     if (isSDKLoaded && context?.user?.fid) {
       fidToUse = context.user.fid;
-    } else {
-      console.warn('FID is not available, using default 0.');
     }
     
     try{
@@ -381,20 +325,9 @@ const ShootingGame: React.FC = () => {
       });
       setTxHash(paymentTxHash);
     } catch (e: unknown) {
-      const error = e as Error;
-      console.error('Error requesting play transaction:', error);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let friendlyMessage = (error && typeof (error as any).shortMessage === 'string' ? (error as any).shortMessage : null) || (error.message ? error.message : String(error)) || "An unknown error occurred.";
-      if (error.message?.includes("Value sent for a play within an active session")) friendlyMessage = "Error: Payment sent when plays are remaining in session.";
-      else if (error.message?.includes("Value sent for a free play session")) friendlyMessage = "Error: Payment sent for a free session.";
-      else if (error.message?.includes("Incorrect play price for new session")) friendlyMessage = "Error: Incorrect payment amount for a new session.";
-      else if (error.message?.includes("insufficient funds")) friendlyMessage = "Error: Insufficient funds for transaction.";
-      setPaymentError(friendlyMessage);
-    } finally {
-      setIsInitiatingPayment(false);
+      console.error('Error requesting play transaction:', e);
     }
-  }, [isConnected, chainId, isSDKLoaded, context, writeContractAsync, setTxHash, setPaymentError, setIsInitiatingPayment]);
-
+  }, [isConnected, chain?.id, isSDKLoaded, context, writeContractAsync]);
 
   const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover' | 'ranking'>('start');
 
@@ -1789,43 +1722,31 @@ gameStateRef.current.enemies.forEach(enemy => {
         <div className="absolute top-3/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2
                     flex flex-col gap-4 w-4/5 max-w-xs">
           <button
-            onClick={handleConnectAndSwitchChain}
+            onClick={handleConnect}
             className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
                        transition-colors duration-200"
-            disabled={isConnectingAndSwitching || isConnectPending}
           >
-            {isConnectingAndSwitching || isConnectPending ? 'Connecting...' : 'Connect Wallet'}
+            Connect Wallet
           </button>
           {rankingButton}
-          {paymentError && (
-            <div className="text-red-500 text-sm mt-1 text-center">
-              {paymentError}
-            </div>
-          )}
         </div>
       );
     }
 
-    if (chainId !== monadTestnet.id) {
+    if (chain?.id !== monadTestnet.id) {
       return (
         <div className="absolute top-3/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2
                     flex flex-col gap-4 w-4/5 max-w-xs">
           <button
-            onClick={handleConnectAndSwitchChain}
+            onClick={handleSwitchToMonad}
             className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg
                        transition-colors duration-200"
-            disabled={isConnectingAndSwitching || isSwitchChainPending}
           >
-            {isConnectingAndSwitching || isSwitchChainPending ? 'Switching...' : 'Switch to Monad Testnet'}
+            Switch to Monad Testnet
           </button>
           {rankingButton}
-          {paymentError && (
-            <div className="text-red-500 text-sm mt-1 text-center">
-              {paymentError}
-            </div>
-          )}
           <div className="text-white text-center text-xs mt-1">
-            Currently on: {getAccount(config).chain?.name || 'Unknown Network'}
+            Currently on: {chain?.name || 'Unknown Network'}
           </div>
         </div>
       );
@@ -1842,15 +1763,14 @@ gameStateRef.current.enemies.forEach(enemy => {
               onClick={handleSendEth}
               className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
                            transition-colors duration-200"
-              disabled={isInitiatingPayment || isSendTxPending}
+              disabled={isWritePending || isSendTxPending}
             >
-              {isInitiatingPayment ? 'Processing...' :
-               isSendTxPending ? 'Sending...' :
+              {isWritePending || isSendTxPending ? 'Processing...' :
                `Pay ${PLAY_AMOUNT} MON for +1 Play`}
             </button>
-            {paymentError && ( 
-              <div className="text-red-500 text-sm mt-1 text-center">
-                {paymentError}
+            {writeError && (
+              <div className="text-red-500 text-sm text-center">
+                Error: {writeError.message}
               </div>
             )}
             {isSendTxError && (
@@ -1942,11 +1862,9 @@ gameStateRef.current.enemies.forEach(enemy => {
           onClick={mintNFT}
           className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg
                   transition-colors duration-200 w-full mb-3"
-          disabled={isMintingNFT || isMintConfirming || mintSuccess || isConnectingAndSwitching || isConnectPending || (chainId !== monadTestnet.id && !isSwitchChainPending)}
+          disabled={isMintingNFT || isMintConfirming || mintSuccess}
         >
-          {isConnectingAndSwitching || isConnectPending ? 'Connecting Wallet...' :
-           isSwitchChainPending ? 'Switching Network...' :
-           isMintingNFT ? 'Processing Mint...' :
+          {isMintingNFT ? 'Processing Mint...' :
            isMintConfirming ? 'Confirming Mint...' :
            mintSuccess ? 'NFT Minted!' :
            'Mint NFT (0.001 MON)'}
@@ -1976,31 +1894,28 @@ gameStateRef.current.enemies.forEach(enemy => {
           <div className="mt-3 w-full max-w-xs px-4">
             {!isConnected ? (
               <button
-                onClick={handleConnectAndSwitchChain}
+                onClick={handleConnect}
                 className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg
                          transition-colors duration-200 w-full mb-1"
-                disabled={isConnectingAndSwitching || isConnectPending}
               >
-                {isConnectingAndSwitching || isConnectPending ? 'Connecting...' : 'Connect Wallet to Pay for Next Play'}
+                Connect Wallet to Pay for Next Play
               </button>
-            ) : chainId !== monadTestnet.id ? (
+            ) : chain?.id !== monadTestnet.id ? (
               <button
-                onClick={handleConnectAndSwitchChain}
+                onClick={handleSwitchToMonad}
                 className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg
                            transition-colors duration-200 w-full mb-1"
-                disabled={isConnectingAndSwitching || isSwitchChainPending}
               >
-                {isConnectingAndSwitching || isSwitchChainPending ? 'Switching...' : 'Switch to Monad Testnet to Pay'}
+                Switch to Monad Testnet to Pay
               </button>
             ) : !isPaymentConfirmed ? (
               <button
                 onClick={handleSendEth}
                 className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg
                          transition-colors duration-200 w-full mb-1"
-                disabled={isInitiatingPayment || isSendTxPending}
+                disabled={isWritePending || isSendTxPending}
               >
-                {isInitiatingPayment ? 'Processing...' :
-                 isSendTxPending ? 'Sending...' : 
+                {isWritePending || isSendTxPending ? 'Processing...' : 
                  `Pay ${PLAY_AMOUNT} MON for +1 Play`}
               </button>
             ) : (
@@ -2012,9 +1927,9 @@ gameStateRef.current.enemies.forEach(enemy => {
                 Start Next Game
               </button>
             )}
-            {paymentError && ( 
+            {writeError && (
               <div className="text-red-400 text-sm mt-1 text-center">
-                {paymentError}
+                Error: {writeError.message}
               </div>
             )}
             {isSendTxError && (
@@ -2079,14 +1994,7 @@ gameStateRef.current.enemies.forEach(enemy => {
   const getMintSignature = async () => {
     if (!isConnected || !address) {
       console.error('Wallet not connected');
-      // ウォレットが接続されていない場合、接続を試みる
-      await handleConnectAndSwitchChain();
-      // handleConnectAndSwitchChain内でエラーが発生した場合やユーザーが接続をキャンセルした場合を考慮し、
-      // 再度 isConnected と address をチェックするか、handleConnectAndSwitchChain の結果をハンドリングする必要があるかもしれません。
-      // ここではシンプルに return します。接続成功後に再度この関数が呼ばれることを期待します。
-      if (!isConnected || !address) { // 再度チェック
-        return null; // 接続されなければnullを返す
-      }
+      return null;
     }
 
     try {
@@ -2123,7 +2031,7 @@ gameStateRef.current.enemies.forEach(enemy => {
   // NFTをミントする関数
   const mintNFT = async () => {
     if (!isConnected || !address) {
-      await handleConnectAndSwitchChain();
+      handleConnect();
       return;
     }
 
