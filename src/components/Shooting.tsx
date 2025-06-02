@@ -409,9 +409,11 @@ const ShootingGame: React.FC = () => {
   const [stats, setStats] = useState<{
     todayHighScore: number;
     totalPlayers: number;
+    totalPlays: number;
   }>({
     todayHighScore: 0,
-    totalPlayers: 0
+    totalPlayers: 0,
+    totalPlays: 0
   });
   const [isLoadingStats, setIsLoadingStats] = useState(true); // 初期状態でローディング中に設定
   const [statsLoaded, setStatsLoaded] = useState(false); // データ取得完了フラグを追加
@@ -550,7 +552,8 @@ const ShootingGame: React.FC = () => {
     loaded: false,
     data: {
       todayHighScore: 0,
-      totalPlayers: 0
+      totalPlayers: 0,
+      totalPlays: 0
     }
   });
 
@@ -1443,6 +1446,15 @@ const drawGame = () => {
       ctx.fillStyle = '#dda0dd';
       ctx.fillText(playersText, centerX, playersStatsY);
       
+      // Total Plays - 黄色っぽいスタイル
+      const playsText = `Total Plays: ${statsRef.current.data.totalPlays.toLocaleString()}`;
+      const playsStatsY = playersStatsY + 30;
+      
+      ctx.shadowColor = '#ffd700';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#ffd700';
+      ctx.fillText(playsText, centerX, playsStatsY);
+      
       // 設定リセット
       ctx.shadowBlur = 0;
       ctx.shadowColor = 'transparent';
@@ -1774,7 +1786,7 @@ gameStateRef.current.enemies.forEach(enemy => {
 
     if (!isConnected) {
       return (
-        <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
+        <div className="absolute top-3/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2
                     flex flex-col gap-4 w-4/5 max-w-xs">
           <button
             onClick={handleConnectAndSwitchChain}
@@ -1796,7 +1808,7 @@ gameStateRef.current.enemies.forEach(enemy => {
 
     if (chainId !== monadTestnet.id) {
       return (
-        <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
+        <div className="absolute top-3/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2
                     flex flex-col gap-4 w-4/5 max-w-xs">
           <button
             onClick={handleConnectAndSwitchChain}
@@ -1822,7 +1834,7 @@ gameStateRef.current.enemies.forEach(enemy => {
     // 接続済み かつ Monad Testnet にいる場合
     if (playLimit !== null && playCount >= playLimit && !playPermission) {
       return (
-      <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
+      <div className="absolute top-3/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2
                   flex flex-col gap-4 w-4/5 max-w-xs">
         {!isPaymentConfirmed ? (
           <>
@@ -1875,7 +1887,7 @@ gameStateRef.current.enemies.forEach(enemy => {
     }
 
     return (
-      <div className="absolute top-2/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2
+      <div className="absolute top-3/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2
                     flex flex-col gap-4 w-4/5 max-w-xs">
         <button
           onClick={handleStartGame} // initGame から handleStartGame に変更 (プレイ回数消費のため)
