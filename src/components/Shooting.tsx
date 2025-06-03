@@ -1751,14 +1751,14 @@ gameStateRef.current.enemies.forEach(enemy => {
   }, [statsLoaded, stats]);
 
   const openFrameIntro = useCallback(() => {
-    sdk.actions.openUrl('https://warpcast.com/saxophone55.eth/0xe1c34641');
+    sdk.actions.openUrl('https://farcaster.xyz/saxophone55.eth/0xe1c34641');
   }, []);
 
   const openShare = useCallback((sentence:string) => {
     const url = "https://farcaster.xyz/miniapps/eag5A1w4mqRl/monad-shootumup";
     //const url = "https://moxie-frame-kit.vercel.app/";
     const inputSentence = sentence;// + "\n\nMini App by @saxophone55.eth";
-    const shareUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(inputSentence)}&embeds%5B%5D=${encodeURIComponent(url)}`
+    const shareUrl = `https://farcaster.xyz/~/compose?text=${encodeURIComponent(inputSentence)}&embeds%5B%5D=${encodeURIComponent(url)}`
     sdk.actions.openUrl(shareUrl);
   }, []);
   
