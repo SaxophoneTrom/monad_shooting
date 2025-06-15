@@ -1867,7 +1867,7 @@ gameStateRef.current.enemies.forEach(enemy => {
           {isMintingNFT ? 'Processing Mint...' :
            isMintConfirming ? 'Confirming Mint...' :
            mintSuccess ? 'NFT Minted!' :
-           'Mint NFT (0.001 MON)'}
+           'Mint NFT (0.1 MON)'}
         </button>
         {mintError && (
           <div className="text-red-400 text-sm mb-3 text-center">
@@ -2055,7 +2055,7 @@ gameStateRef.current.enemies.forEach(enemy => {
           BigInt(sig.parameters.expiry),
           sig.signature as `0x${string}`
         ],
-        value: parseEther("0.001") // ミント料金（コントラクトの設定に合わせて調整）
+        value: parseEther("0.1") // ミント料金（コントラクトの設定に合わせて調整）
       }, {
         onSuccess: (hash) => {
           setMintTxHash(hash);
